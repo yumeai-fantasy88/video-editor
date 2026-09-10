@@ -1,6 +1,7 @@
 import {Input,ALL_FORMATS,BlobSource,CanvasSink,AudioBufferSink,Output,BufferTarget,Mp4OutputFormat,CanvasSource,AudioBufferSource,Quality,canEncodeVideo,canEncodeAudio} from 'mediabunny';
 import {registerAacEncoder} from '@mediabunny/aac-encoder';
 import {Grader} from './grade.js';
+import {ensureFonts} from './fonts.js';
 import {layout,total,duration,gainAt,clamp} from './model.js';
 export const assets=new Map();
 export async function loadAsset(file,assetId=crypto.randomUUID()){
@@ -25,11 +26,15 @@ export class Renderer {
   async prepare(p,fps){for(const c of layout(p)){const a=assets.get(c.asset);if(!a?.video)continue;const first=Math.ceil((c.start-1e-8)*fps),last=Math.ceil((c.end-1e-8)*fps);function* times(){for(let f=first;f<last;f++)yield Math.min(c.out-1e-6,c.in+(f/fps-c.start)*c.speed);}
     const sink=new CanvasSink(a.video,{poolSize:1});this.iterators.set(c.id,sink.canvasesAtTimestamps(times()));}}
   async close(){for(const it of this.iterators.values())await it.return();this.iterators.clear();}
-  async render(p,time,before=false){const {canvas,ctx}=this,w=canvas.width,h=canvas.height;ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
+  async render(p,time,before=false){const {canvas}=this,w=canvas.width,h=canvas.height;
+    await ensureFonts(p.texts.filter(t=>time>=t.start&&time<t.end));
+    this.composite??=document.createElement('canvas');
+    if(this.composite.width!==w||this.composite.height!==h){this.composite.width=w;this.composite.height=h;}
+    const ctx=this.composite.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
     for(const c of layout(p).filter(c=>time>=c.start-1e-8&&time<c.end-1e-8)){
       const a=assets.get(c.asset);if(!a)throw Error('素材が未接続です。素材を再選択してください');
       let source=a.image;if(a.video){const iterator=this.iterators.get(c.id);const frame=iterator?(await iterator.next()).value:await a.sink.getCanvas(Math.min(c.out-1e-6,c.in+(time-c.start)*c.speed));source=frame?.canvas;}
-      if(!source)continue;
+      if(!source)throw Error('映像フレームを取得できませんでした。再生位置を戻して再試行してください');
       // Transform at preview/export resolution, then apply the identical shader.
       this.layer.width=w;this.layer.height=h;const lc=this.layer.getContext('2d');lc.clearRect(0,0,w,h);lc.save();lc.translate(w*(.5+(c.offsetX??0)/100),h*(.5+(c.offsetY??0)/100));lc.rotate(c.rotation*Math.PI/180);
       const angle=c.rotation*Math.PI/180,cos=Math.abs(Math.cos(angle)),sin=Math.abs(Math.sin(angle));
@@ -48,6 +53,8 @@ export class Renderer {
       ctx.strokeStyle=t.outline||'#000000';ctx.lineWidth=t.stroke*h/1080;ctx.fillStyle=t.color||'#ffffff';
       lines.forEach((line,i)=>{const yy=y+(i-(lines.length-1)/2)*size*1.3;if(t.stroke)ctx.strokeText(line,x,yy);ctx.fillText(line,x,yy);});ctx.restore();
     }
+    // Publish only a complete frame. Decoding must never clear the visible canvas.
+    this.ctx.drawImage(this.composite,0,0);
   }
 }
 export async function mixAudio(p,start,length,rate=48000){
@@ -76,6 +83,7 @@ export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal}
   if(!await canEncodeVideo('avc',{width,height,bitrate:mbps*1e6}))throw Error('このブラウザはH.264書き出しに対応していません。OS・ブラウザを更新するかPCで開いてください');
   const hasAudio=[...p.clips,...p.audio].some(c=>c.volume>0&&assets.get(c.asset)?.audio);
   if(hasAudio&&!await canEncodeAudio('aac',{sampleRate:48000,numberOfChannels:2}))registerAacEncoder();
+  await ensureFonts(p.texts);
   await document.fonts.ready;
   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
   const renderer=new Renderer(canvas),target=new BufferTarget(),output=new Output({format:new Mp4OutputFormat({fastStart:'in-memory'}),target});

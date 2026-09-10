@@ -1,10 +1,12 @@
 import {newProject,id,clip,layout,total,duration,frameDuration,splitClip,gradeDefault,parseSrt,validateProject,clamp} from './model.js';
 import {assets,loadAsset,assetMeta,Renderer,dimensions,mixAudio,exportVideo} from './engine.js';
+import {extraFonts} from './fonts.js';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let p=newProject(),selected=null,tab='edit',time=0,before=false,playing=false,playingToken=0,renderBusy=false,renderAgain=false,busy=false,zoom=60,undo=[],redo=[],reconnecting=false,audioContext,scheduled=[],exportController,downloadUrl;
 let renderer;try{renderer=new Renderer($('#preview'));}catch(e){status(e.message);}
 let fonts=['system-ui','sans-serif','serif','monospace','"Hiragino Sans", sans-serif','"Hiragino Mincho ProN", serif','"Yu Gothic", sans-serif','"Yu Mincho", serif'];
 const fontNames=['標準','ゴシック','明朝','等幅','ヒラギノ角ゴ','ヒラギノ明朝','游ゴシック','游明朝'];
+fonts.push(...extraFonts.map(f=>`"${f}", sans-serif`));fontNames.push(...extraFonts);
 let presets={};try{presets=JSON.parse(localStorage.getItem('density-presets')||'{}');}catch{}
 function status(s){$('#status').textContent=s;}
 function checkpoint(){stop();undo.push(JSON.stringify(p));if(undo.length>60)undo.shift();redo=[];}
