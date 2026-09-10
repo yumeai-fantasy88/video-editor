@@ -50,6 +50,7 @@ export function validateProject(p) {
     for(const key of ['fadeIn','fadeOut','transition','videoFadeIn','videoFadeOut']) if(c[key]!==undefined&&!finite(c[key],0,86400)) throw Error('フェード設定が不正です');
   }
   for(const c of p.clips){if(!finite(c.rotation,-360,360)||!finite(c.zoom,0.1,5)) throw Error('変形設定が不正です');c.grade={...gradeDefault(),...c.grade};for(const v of Object.values(c.grade))if(!finite(v,-4,4))throw Error('カラー設定が不正です');}
+  for(const c of p.clips){c.fit??='contain';c.offsetX??=0;c.offsetY??=0;if(!['contain','cover'].includes(c.fit)||!finite(c.offsetX,-100,100)||!finite(c.offsetY,-100,100))throw Error('サイズ・位置設定が不正です');}
   for(const a of p.audio)if(!finite(a.start,0,86400))throw Error('音声位置が不正です');
   for(const t of p.texts)if(!finite(t.start,0,86400)||!finite(t.end,t.start+0.000001,86400)||typeof t.text!=='string'||!finite(t.x,0,100)||!finite(t.y,0,100)||!finite(t.size,1,30)||!finite(t.stroke,0,20))throw Error('字幕設定が不正です');
   return p;

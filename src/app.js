@@ -11,7 +11,7 @@ function checkpoint(){stop();undo.push(JSON.stringify(p));if(undo.length>60)undo
 function current(){return [...p.clips,...p.audio,...p.texts].find(c=>c.id===selected);}
 function format(t){return `${String(Math.floor(t/60)).padStart(2,'0')}:${(t%60).toFixed(3).padStart(6,'0')}`;}
 function saveBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
-function refresh(rebuild=true){time=clamp(time,0,total(p));$('#empty').hidden=!!p.clips.length;$('#formatBadge').textContent=`${p.ratio} · ${p.fps} fps`;$('#scrub').max=total(p);$('#scrub').step=1/p.fps;$('#scrub').value=time;$('#timecode').textContent=`${format(time)} / ${format(total(p))}`;$('#projectName').value=p.name;$('#undo').disabled=!undo.length;$('#redo').disabled=!redo.length;timeline();if(rebuild)panel();requestRender();}
+function refresh(rebuild=true){time=clamp(time,0,total(p));$('.screen').style.setProperty('--preview-ratio',p.ratio.replace(':',' / '));$('#empty').hidden=!!p.clips.length;$('#formatBadge').textContent=`${p.ratio} · ${p.fps} fps`;$('#scrub').max=total(p);$('#scrub').step=1/p.fps;$('#scrub').value=time;$('#timecode').textContent=`${format(time)} / ${format(total(p))}`;$('#projectName').value=p.name;$('#undo').disabled=!undo.length;$('#redo').disabled=!redo.length;timeline();if(rebuild)panel();requestRender();}
 async function requestRender(){if(!renderer||busy)return;if(renderBusy){renderAgain=true;return;}renderBusy=true;try{const [w,h]=dimensions(p.ratio,960);if($('#preview').width!==w||$('#preview').height!==h){$('#preview').width=w;$('#preview').height=h;}await renderer.render(p,Math.min(time,Math.max(0,total(p)-1/p.fps)),before);}catch(e){stop();status(e.message);}finally{renderBusy=false;if(renderAgain){renderAgain=false;requestRender();}}}
 function timeline(){const placed=layout(p),max=Math.max(total(p)+2,8),width=Math.max(300,max*zoom);let html='<div class="ruler">';const step=zoom<40?5:1;for(let s=0;s<max;s+=step)html+=`<span class="tick" style="left:${s*zoom}px">${s}s</span>`;html+='</div>';
   const track=(items,kind)=>`<div class="track">${items.map(c=>`<button class="block ${kind} ${c.id===selected?'selected':''}" data-select="${c.id}" style="left:${c.start*zoom}px;width:${Math.max(16,(c.end-c.start)*zoom)}px" title="${esc(c.name||c.text)}">${esc(c.name||c.text)}<small>${(c.end-c.start).toFixed(2)}s ${c.speed?`· ${c.speed.toFixed(2)}×`:''}</small></button>`).join('')}</div>`;
@@ -28,6 +28,7 @@ function panel(){const c=current(),visual=c&&p.clips.includes(c),audio=c&&(p.aud
     html='<h2>クリップ編集</h2>';
     if(!visual)html+='<p class="sub">映像トラックのクリップを選択してください。</p>'+btn('import','＋ 動画・画像を追加','wide');
     else{const a=assets.get(c.asset)||p.assets.find(a=>a.id===c.asset);html+=`<p class="sub">${esc(c.name)}</p><div class="button-grid">${btn('left','← 前へ')}${btn('right','後ろへ →')}${btn('split','再生位置で分割')}${btn('duplicate','複製')}</div>`;
+      html+='<h3>サイズ・位置</h3><div class="button-grid">'+btn('fill','画面を埋める')+btn('fit','全体を表示')+'</div>'+range('zoom','拡大率（倍）',c.zoom,.1,5,.01)+range('offsetX','左右の位置（％）',c.offsetX??0,-100,100,.1)+range('offsetY','上下の位置（％）',c.offsetY??0,-100,100,.1)+btn('positionReset','位置を中央に戻す','wide')+'<p class="sub">「画面を埋める」は画面外の部分を切り取ります。素材に黒帯が含まれる場合は、拡大率を少し上げて調整してください。</p>';
       html+=number('in','素材の開始位置（秒）',c.in,0,a.kind==='image'?86400:a.duration)+number('out','素材の終了位置（秒）',c.out,0,a.kind==='image'?86400:a.duration);
       html+='<h3>速度と仕上がりの尺</h3>'+number('speed','再生速度（倍）',c.speed,.05,20,.001)+number('target','希望する尺（秒）',c.requested??duration(c),1/p.fps,86400);
       html+=`<p class="notice">実際の尺 <strong>${frameDuration(duration(c),p.fps).toFixed(3)}秒</strong> · ${Math.round(duration(c)*p.fps)}フレーム<br>音声が付いたままの速度変更では音程も変わります。元の速さを保つ場合は先に音声を分離してください。</p>`;
@@ -83,6 +84,8 @@ $('#panel').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dat
   if(action==='presetExport'){saveBlob(new Blob([JSON.stringify({type:'density-grade',grade:c.grade},null,2)],{type:'application/json'}),'look.density.json');return;}
   if(action==='presetSave'){const name=prompt('プリセット名');if(name){presets[name]=structuredClone(c.grade);try{localStorage.setItem('density-presets',JSON.stringify(presets));}catch{status('保存容量が不足しています。設定をダウンロードしてください');}panel();}return;}
   checkpoint();
+  if(action==='fill'||action==='fit'){c.fit=action==='fill'?'cover':'contain';c.zoom=1;c.offsetX=0;c.offsetY=0;}
+  if(action==='positionReset'){c.offsetX=0;c.offsetY=0;}
   if(action==='addText'){const t={id:id(),text:'テキスト',start:time,end:time+3,font:'sans-serif',size:5,x:50,y:85,stroke:3,color:'#ffffff',outline:'#000000',bold:false,background:false};p.texts.push(t);selected=t.id;}
   if(action==='delete'){for(const key of ['clips','audio','texts'])p[key]=p[key].filter(x=>x.id!==selected);selected=null;}
   if(action==='left'||action==='right'){const i=p.clips.indexOf(c),j=i+(action==='left'?-1:1);if(j>=0&&j<p.clips.length)[p.clips[i],p.clips[j]]=[p.clips[j],p.clips[i]];}

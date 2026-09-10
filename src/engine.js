@@ -31,8 +31,10 @@ export class Renderer {
       let source=a.image;if(a.video){const iterator=this.iterators.get(c.id);const frame=iterator?(await iterator.next()).value:await a.sink.getCanvas(Math.min(c.out-1e-6,c.in+(time-c.start)*c.speed));source=frame?.canvas;}
       if(!source)continue;
       // Transform at preview/export resolution, then apply the identical shader.
-      this.layer.width=w;this.layer.height=h;const lc=this.layer.getContext('2d');lc.clearRect(0,0,w,h);lc.save();lc.translate(w/2,h/2);lc.rotate(c.rotation*Math.PI/180);
-      const quarter=Math.abs(c.rotation%180)===90;const scale=Math.min(w/(quarter?source.height:source.width),h/(quarter?source.width:source.height))*c.zoom;lc.scale(scale,scale);lc.drawImage(source,-source.width/2,-source.height/2);lc.restore();
+      this.layer.width=w;this.layer.height=h;const lc=this.layer.getContext('2d');lc.clearRect(0,0,w,h);lc.save();lc.translate(w*(.5+(c.offsetX??0)/100),h*(.5+(c.offsetY??0)/100));lc.rotate(c.rotation*Math.PI/180);
+      const angle=c.rotation*Math.PI/180,cos=Math.abs(Math.cos(angle)),sin=Math.abs(Math.sin(angle));
+      const scale=(c.fit==='cover'?Math.max((w*cos+h*sin)/source.width,(w*sin+h*cos)/source.height):Math.min(w/(source.width*cos+source.height*sin),h/(source.width*sin+source.height*cos)))*c.zoom;
+      lc.scale(scale,scale);lc.drawImage(source,-source.width/2,-source.height/2);lc.restore();
       const picture=before?this.layer:this.grader.render(this.layer,c.grade);const t=time-c.start;
       const fade=Math.min(1,c.videoFadeIn?t/c.videoFadeIn:1,c.videoFadeOut?(c.duration-t)/c.videoFadeOut:1);
       // Fade incoming image over outgoing image; black for clip fades.
