@@ -14,6 +14,13 @@ export function layout(p) {
 }
 export function total(p) {return Math.max(0,...layout(p).map(c=>c.end),...p.audio.map(c=>c.start+duration(c)),...p.texts.map(c=>c.end));}
 export const frameDuration = (seconds,fps) => Math.max(1,Math.round(seconds*fps))/fps;
+export const pictureEnd = p => layout(p).at(-1)?.end ?? 0;
+export function textPlacement(p,time,length=3){
+  const end=pictureEnd(p);
+  if(!end)return {start:0,end:length};
+  const start=time>=end-1/p.fps?Math.max(0,end-length):clamp(time,0,end-1/p.fps);
+  return {start,end:Math.min(end,start+length)};
+}
 export function clip(asset) {return {id:id(),asset:asset.id,name:asset.name,in:0,out:asset.kind==='image'?5:asset.duration,speed:1,requested:null,volume:1,fadeIn:0,fadeOut:0,videoFadeIn:0,videoFadeOut:0,transition:0,rotation:0,zoom:1,grade:gradeDefault()};}
 export function gainAt(c,t,d=duration(c)) {return c.volume*Math.min(1,c.fadeIn>0?t/c.fadeIn:1,c.fadeOut>0?(d-t)/c.fadeOut:1);}
 export function splitClip(p,clipId,time) {

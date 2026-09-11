@@ -1,6 +1,7 @@
 import {newProject,id,clip,layout,total,duration,frameDuration,splitClip,gradeDefault,parseSrt,validateProject,clamp} from './model.js';
 import {assets,loadAsset,assetMeta,Renderer,dimensions,mixAudio,exportVideo} from './engine.js';
 import {extraFonts} from './fonts.js';
+import {pictureEnd,textPlacement} from './model.js';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let p=newProject(),selected=null,tab='edit',time=0,before=false,playing=false,playingToken=0,renderBusy=false,renderAgain=false,busy=false,zoom=60,undo=[],redo=[],reconnecting=false,audioContext,scheduled=[],exportController,downloadUrl;
 let renderer;try{renderer=new Renderer($('#preview'));}catch(e){status(e.message);}
@@ -47,7 +48,7 @@ function panel(){const c=current(),visual=c&&p.clips.includes(c),audio=c&&(p.aud
   }
   if(tab==='text'){
     html='<h2>字幕とテキスト</h2><div class="button-grid">'+btn('addText','＋ テキスト')+btn('srt','SRTを読み込む')+'</div><div class="item-list">'+p.texts.map(x=>`<button data-select="${x.id}" class="${selected===x.id?'active':''}">${esc(x.text)}</button>`).join('')+'</div>';
-    if(text){html+=`<h3>表示内容</h3><textarea data-field="text" aria-label="字幕テキスト">${esc(c.text)}</textarea><label>フォント<select data-field="font">${fonts.map((f,i)=>`<option value="${esc(f)}" ${c.font===f?'selected':''}>${esc(fontNames[i]||f)}</option>`).join('')}</select></label>`+btn('font','＋ フォントファイルを追加','wide');
+    if(text){if(pictureEnd(p)&&c.end>pictureEnd(p))html+='<p class="notice">この字幕は映像の終了（'+pictureEnd(p).toFixed(3)+'秒）を越えています。映像がない区間は黒背景になります。</p>'+btn('fitText','字幕を映像の時間内に収める','wide');html+=`<h3>表示内容</h3><textarea data-field="text" aria-label="字幕テキスト">${esc(c.text)}</textarea><label>フォント<select data-field="font">${fonts.map((f,i)=>`<option value="${esc(f)}" ${c.font===f?'selected':''}>${esc(fontNames[i]||f)}</option>`).join('')}</select></label>`+btn('font','＋ フォントファイルを追加','wide');
       html+=number('start','表示開始（秒）',c.start)+number('end','表示終了（秒）',c.end)+range('size','文字サイズ（画面高％）',c.size,1,20,.1)+range('x','横位置（％）',c.x,0,100,1)+range('y','縦位置（％）',c.y,0,100,1)+range('stroke','縁取り（1080p基準px）',c.stroke,0,16,1);
       html+=`<div class="button-grid"><label>文字色 <input type="color" data-field="color" value="${esc(c.color)}"></label><label>縁取り色 <input type="color" data-field="outline" value="${esc(c.outline)}"></label></div><label class="check"><input type="checkbox" data-field="bold" ${c.bold?'checked':''}>太字</label><label class="check"><input type="checkbox" data-field="background" ${c.background?'checked':''}>背景をつける</label>`+btn('delete','テキストを削除','wide danger');
     }
@@ -82,13 +83,14 @@ for(const selector of ['#import','#firstImport'])$(selector).onclick=()=>chooseM
 function updateTabs(){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));}
 $('#tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){tab=b.dataset.tab;updateTabs();panel();}};
 $('#timeline').onclick=e=>{const b=e.target.closest('[data-select]');if(b){stop();selected=b.dataset.select;const c=current();time=p.clips.includes(c)?layout(p).find(x=>x.id===c.id).start:c.start;if(p.texts.includes(c))tab='text';else if(p.audio.includes(c))tab='audio';updateTabs();refresh();}else{stop();const r=$('#timeline').getBoundingClientRect();time=clamp(Math.round((e.clientX-r.left)/zoom*p.fps)/p.fps,0,total(p));refresh(false);}};
-$('#panel').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.select){selected=b.dataset.select;panel();return;}const action=b.dataset.action,c=current();if(['import','srt','font'].includes(action)){if(action==='import')chooseMedia();else $(action==='srt'?'#srtInput':'#fontInput').click();return;}
+$('#panel').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.select){stop();selected=b.dataset.select;const item=current();if(p.texts.includes(item))time=item.start;refresh();return;}const action=b.dataset.action,c=current();if(['import','srt','font'].includes(action)){if(action==='import')chooseMedia();else $(action==='srt'?'#srtInput':'#fontInput').click();return;}
   if(action==='presetExport'){saveBlob(new Blob([JSON.stringify({type:'density-grade',grade:c.grade},null,2)],{type:'application/json'}),'look.density.json');return;}
   if(action==='presetSave'){const name=prompt('プリセット名');if(name){presets[name]=structuredClone(c.grade);try{localStorage.setItem('density-presets',JSON.stringify(presets));}catch{status('保存容量が不足しています。設定をダウンロードしてください');}panel();}return;}
   checkpoint();
   if(action==='fill'||action==='fit'){c.fit=action==='fill'?'cover':'contain';c.zoom=1;c.offsetX=0;c.offsetY=0;}
   if(action==='positionReset'){c.offsetX=0;c.offsetY=0;}
-  if(action==='addText'){const t={id:id(),text:'テキスト',start:time,end:time+3,font:'sans-serif',size:5,x:50,y:85,stroke:3,color:'#ffffff',outline:'#000000',bold:false,background:false};p.texts.push(t);selected=t.id;}
+  if(action==='addText'){const t={id:id(),text:'テキスト',...textPlacement(p,time),font:'sans-serif',size:5,x:50,y:85,stroke:3,color:'#ffffff',outline:'#000000',bold:false,background:false};p.texts.push(t);selected=t.id;time=t.start;}
+  if(action==='fitText'){Object.assign(c,textPlacement(p,c.start,c.end-c.start));time=c.start;}
   if(action==='delete'){for(const key of ['clips','audio','texts'])p[key]=p[key].filter(x=>x.id!==selected);selected=null;}
   if(action==='left'||action==='right'){const i=p.clips.indexOf(c),j=i+(action==='left'?-1:1);if(j>=0&&j<p.clips.length)[p.clips[i],p.clips[j]]=[p.clips[j],p.clips[i]];}
   if(action==='duplicate'){const copy=structuredClone(c);copy.id=id();p.clips.splice(p.clips.indexOf(c)+1,0,copy);selected=copy.id;}
