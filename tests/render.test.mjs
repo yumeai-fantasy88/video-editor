@@ -21,6 +21,7 @@ test('visible frame stays intact while decoding and is replaced only when comple
     await work;
     assert.deepEqual(calls,['present']);
     a.sink.getCanvas=async()=>null;
+    a.sink.canvases=async function*(){};
     await assert.rejects(renderer.render(p,2,true),/映像フレーム/);
     assert.deepEqual(calls,['present']);
   }finally{assets.delete(a.id);globalThis.document=old;}

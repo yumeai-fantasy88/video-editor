@@ -2,6 +2,7 @@ import {Input,ALL_FORMATS,BlobSource,CanvasSink,AudioBufferSink,Output,BufferTar
 import {registerAacEncoder} from '@mediabunny/aac-encoder';
 import {Grader} from './grade.js';
 import {ensureFonts} from './fonts.js';
+import {readVideoFrame} from './video-frame.js';
 import {layout,total,duration,gainAt,clamp} from './model.js';
 export const assets=new Map();
 export async function loadAsset(file,assetId=crypto.randomUUID()){
@@ -14,7 +15,7 @@ export async function loadAsset(file,assetId=crypto.randomUUID()){
     if(a.audio&&!await a.audio.canDecode())throw Error('この音声のコーデックは端末でデコードできません');
     a.kind=a.video?'video':'audio';a.duration=await a.input.computeDuration();
     if(!Number.isFinite(a.duration)||a.duration<=0)throw Error('素材の長さを取得できません');
-    if(a.video){a.sink=new CanvasSink(a.video,{poolSize:2});const first=await a.sink.getCanvas(await a.video.getFirstTimestamp());if(first){a.width=first.canvas.width;a.height=first.canvas.height;const thumb=document.createElement('canvas');thumb.width=160;thumb.height=90;thumb.getContext('2d').drawImage(first.canvas,0,0,160,90);a.thumb=thumb.toDataURL('image/jpeg',.65);}}
+    if(a.video){a.sink=new CanvasSink(a.video,{poolSize:2});const first=await readVideoFrame(a.sink,await a.video.getFirstTimestamp());if(first){a.width=first.canvas.width;a.height=first.canvas.height;const thumb=document.createElement('canvas');thumb.width=160;thumb.height=90;thumb.getContext('2d').drawImage(first.canvas,0,0,160,90);a.thumb=thumb.toDataURL('image/jpeg',.65);}}
     if(a.audio)a.audioSink=new AudioBufferSink(a.audio);
   }
   const old=assets.get(a.id);old?.input?.dispose();old?.image?.close();assets.set(a.id,a);return a;
@@ -33,7 +34,7 @@ export class Renderer {
     const ctx=this.composite.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
     for(const c of layout(p).filter(c=>time>=c.start-1e-8&&time<c.end-1e-8)){
       const a=assets.get(c.asset);if(!a)throw Error('素材が未接続です。素材を再選択してください');
-      let source=a.image;if(a.video){const iterator=this.iterators.get(c.id);const frame=iterator?(await iterator.next()).value:await a.sink.getCanvas(Math.min(c.out-1e-6,c.in+(time-c.start)*c.speed));source=frame?.canvas;}
+      let source=a.image;if(a.video){const iterator=this.iterators.get(c.id);const sourceTime=Math.min(c.out-1e-6,c.in+(time-c.start)*c.speed);const frame=(iterator?(await iterator.next()).value:null)||await readVideoFrame(a.sink,sourceTime);source=frame?.canvas;}
       if(!source)throw Error('映像フレームを取得できませんでした。再生位置を戻して再試行してください');
       // Transform at preview/export resolution, then apply the identical shader.
       this.layer.width=w;this.layer.height=h;const lc=this.layer.getContext('2d');lc.clearRect(0,0,w,h);lc.save();lc.translate(w*(.5+(c.offsetX??0)/100),h*(.5+(c.offsetY??0)/100));lc.rotate(c.rotation*Math.PI/180);
