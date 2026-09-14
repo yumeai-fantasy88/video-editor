@@ -114,7 +114,7 @@ $('#panel').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if
 let gestureKey=null;
 $('#panel').addEventListener('focusin',()=>gestureKey=null);
 $('#panel').addEventListener('pointerdown',()=>gestureKey=null);
-function editControl(e){const el=e.target,c=current();if(!c)return;
+function editControl(e){const el=e.target,c=current();if(!c)return;if(e.type==='input'&&(el.tagName==='SELECT'||el.type==='checkbox'))return;
   if(el.id==='referenceClip'){checkpoint();p.referenceClip=el.value;return;}
   if(el.id==='lookSelect'){if(looks[el.value]){checkpoint();p.look={...gradeDefault(),...looks[el.value]};refresh();}return;}
   if(el.dataset.colorToggle){checkpoint();const [scope,key]=el.dataset.colorToggle.split('.');(scope==='g'?c.grade:p.look)[key]=el.checked?1:0;refresh(false);return;}

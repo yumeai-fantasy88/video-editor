@@ -9,7 +9,7 @@ await build({stdin:{contents:"export * from '../src/engine.js';export * from '..
 const root=resolve('.');
 const server=createServer(async(req,res)=>{try{const path=resolve(root,'.'+new URL(req.url,'http://localhost').pathname);if(!path.startsWith(root+'/'))throw Error();const body=await readFile(path);res.setHeader('Content-Type',({'.js':'text/javascript','.html':'text/html','.css':'text/css'})[extname(path)]||'application/octet-stream');res.end(body);}catch{res.statusCode=404;res.end();}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
-const browser=await chromium.launch({args:['--enable-unsafe-swiftshader']});
+const browser=await chromium.launch({channel:'chrome',args:['--enable-unsafe-swiftshader']});
 try{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port+'/docs/index.html');
@@ -20,6 +20,10 @@ try{
   const grader=new Grader(),read=g=>{const out=grader.render(canvas,g);const copy=document.createElement('canvas');copy.width=32;copy.height=32;const c=copy.getContext('2d');c.drawImage(out,0,0);return [...c.getImageData(16,16,1,1).data];};
   const neutral=read(gradeDefault()),bypass=read({...gradeDefault(),exposure:2,density:1,grain:1,correctionOn:0,lookOn:0,textureOn:0});
   const changed=read({...gradeDefault(),exposure:1});
+  ctx.fillStyle='rgb(120,120,120)';ctx.fillRect(0,0,32,32);ctx.fillStyle='rgb(130,130,130)';ctx.fillRect(16,16,1,1);
+  const luma=read({...gradeDefault(),noiseOn:1,denoiseLuma:1});
+  ctx.fillStyle='rgb(120,120,120)';ctx.fillRect(0,0,32,32);ctx.fillStyle='rgb(150,110,120)';ctx.fillRect(16,16,1,1);
+  const chroma=read({...gradeDefault(),noiseOn:1,denoiseChroma:1});
   const a={id:'browser-image',name:'sample',kind:'image',duration:5,image:canvas};M.assets.set(a.id,a);
   const p=M.newProject();p.clips=[M.clip(a)];p.clips[0].out=5;
   const exports=[];
@@ -30,8 +34,9 @@ try{
    let packets=0,first=null,last=null;for await(const packet of new M.EncodedPacketSink(track).packets()){packets++;first??=packet.timestamp;last=packet.timestamp;}
    exports.push({fps,codec:track.codec,packets,first,last,duration:await input.computeDuration()});input.dispose();
   }
-  return {neutral,bypass,changed,exports};
+  return {neutral,bypass,changed,luma,chroma,exports};
  });
+ assert.ok(result.luma[0]<128);assert.ok(result.chroma[0]-result.chroma[1]<25);
  assert.deepEqual(result.neutral,result.bypass);assert.ok(Math.abs(result.neutral[0]-90)<=2);assert.ok(result.changed[0]>result.neutral[0]+30);
  for(const e of result.exports){assert.equal(e.codec,'avc');assert.equal(e.packets,e.fps/2);assert.ok(Math.abs(e.first)<.001);assert.ok(Math.abs(e.duration-.5)<.02);}
  await page.locator('#exportOpen').click();assert.deepEqual(await page.locator('#exportFps option').allTextContents(),['24','25','30','50','60']);

@@ -21,7 +21,7 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: npm install --no-save --package-lock=false playwright@1.55.0
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install chrome
       - run: node tests/browser-smoke.mjs
       - name: Expose verified public bundle for review
         run: |
