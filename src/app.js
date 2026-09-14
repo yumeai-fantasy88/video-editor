@@ -1,3 +1,4 @@
+import {looks,matchGains,imageMean} from './color-settings.js';
 import {newProject,id,clip,layout,total,duration,frameDuration,splitClip,gradeDefault,parseSrt,validateProject,clamp} from './model.js';
 import {assets,loadAsset,assetMeta,Renderer,dimensions,mixAudio,exportVideo} from './engine.js';
 import {extraFonts} from './fonts.js';
@@ -59,13 +60,21 @@ function panel(){const c=current(),visual=c&&p.clips.includes(c),audio=c&&(p.aud
     else html+=`<p class="sub">${esc(c.name)}</p>`+range('rotation','回転（度）',c.rotation,-180,180,1)+range('zoom','ズーム（倍）',c.zoom,.1,5)+number('videoFadeIn','映像フェードイン（秒）',c.videoFadeIn,0,duration(c))+number('videoFadeOut','映像フェードアウト（秒）',c.videoFadeOut,0,duration(c))+number('transition','前の映像とのクロスフェード（秒）',c.transition,0,duration(c)/2)+'<p class="sub">クロスフェードは映像を重ねるため全体の尺が短くなります。前後クリップの半分の長さまで適用します。音声フェードは音声パネルで別に調整できます。</p>';
   }
   if(tab==='color'){
-    html='<h2>カラーグレーディング <span class="pill">SDR</span></h2>';
+    html='<h2>カラーと質感 <span class="pill">SDR</span></h2>';
     if(!visual)html+='<p class="sub">映像クリップを選択してください。</p>';
-    else{const g=c.grade;html+=`<p class="sub">${esc(c.name)}</p><div class="density-card"><h3>COLOR DENSITY</h3>`+range('g.density','デンシティー',g.density,-1,2)+range('g.depth','中間色・暗部へ集中',g.depth,0,1)+range('g.protect','ハイライト保護',g.protect,0,1)+'</div>';
-      for(const [key,label,min,max] of [['exposure','露出（EV）',-3,3],['contrast','コントラスト',0,2],['saturation','彩度',0,2],['temperature','色温度',-1,1],['tint','色かぶり',-1,1],['shadows','シャドウ',-1,1],['highlights','ハイライト',-1,1],['fade','フェード',0,.5]])html+=range('g.'+key,label,g[key],min,max);
-      html+='<details><summary>色別デンシティー</summary>';for(const [k,label] of [['red','赤'],['yellow','黄'],['green','緑'],['cyan','シアン'],['blue','青'],['magenta','マゼンタ']])html+=range('g.'+k,label,g[k],-1,1);html+='</details>';
-      html+='<div class="button-grid">'+btn('gradeAll','全クリップに適用')+btn('gradeReset','カラーをリセット')+btn('presetSave','プリセット保存')+btn('presetExport','設定をダウンロード')+'</div>';
-      html+='<label>保存済みプリセット<select id="presetSelect"><option value="">選択してください</option>'+Object.keys(presets).map(k=>`<option>${esc(k)}</option>`).join('')+'</select></label><p class="sub">プリセットはこのブラウザ内に保存。ダウンロードした設定は素材追加から読み込めます。HDR／Logの専用色管理は含みません。</p>';
+    else{
+      const g={...gradeDefault(),...c.grade};c.grade=g;p.look??=gradeDefault();const look=p.look;
+      const toggle=(key,label,v)=>'<label class="check"><input type="checkbox" data-color-toggle="'+key+'" '+(v?'checked':'')+'>'+label+'</label>';
+      const controls=(prefix,obj,rows)=>rows.map(([k,l,min,max])=>range(prefix+k,l,obj[k],min,max)).join('');
+      const tone=[['exposure','露出（EV）',-3,3],['contrast','コントラスト',0,2],['pivot','コントラスト・ピボット',.05,.95],['black','黒レベル',-.3,.3],['white','白レベル',.5,1.5],['shadows','シャドウ',-1,1],['highlights','ハイライト',-1,1],['temperature','色温度：寒色 ← → 暖色',-1,1],['tint','色かぶり：マゼンタ ← → 緑',-1,1],['saturation','彩度',0,2]];
+      html+='<p class="sub">'+esc(c.name)+'</p><details open><summary>1 · ノイズを抑える</summary>'+toggle('g.noiseOn','ノイズ除去を有効にする',g.noiseOn)+controls('g.',g,[['denoiseChroma','色ノイズ',0,1],['denoiseLuma','輝度ノイズ',0,1]])+'<p class="sub">初期値は両方0（処理なし）。輪郭を保つ軽量な空間処理です。</p></details>';
+      html+='<details open><summary>2 · クリップの色と明暗</summary>'+toggle('g.correctionOn','クリップ補正 ON',g.correctionOn)+controls('g.',g,tone)+'</details>';
+      html+='<details open><summary>3 · クリップ同士を揃える</summary><label>基準クリップ<select id="referenceClip"><option value="">選択してください</option>'+p.clips.filter(x=>x.id!==c.id).map(x=>'<option value="'+x.id+'" '+(p.referenceClip===x.id?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></label><div class="button-grid">'+btn('referenceView','基準と並べて比較')+btn('matchColor','色合わせを補助')+'</div>'+range('g.matchStrength','色合わせの適用強度',g.matchStrength,0,1)+'<div id="referenceResult"></div><p class="sub">各クリップの中央フレームの平均色・明るさを比較します。構図が異なる場合は強度を下げて調整してください。</p></details>';
+      html+='<details><summary>4 · クリップのルック</summary>'+toggle('g.lookOn','クリップルック ON',g.lookOn)+controls('g.',g,[['density','デンシティー',-1,2],['depth','中間色・暗部へ集中',0,1],['protect','ハイライト保護',0,1],['curveLow','カーブ：暗部（25%）',-.2,.2],['curveMid','カーブ：中間（50%）',-.2,.2],['curveHigh','カーブ：明部（75%）',-.2,.2],['fade','退色',0,.5]]);
+      for(const [k,label] of [['red','赤'],['yellow','黄'],['green','緑'],['cyan','シアン'],['blue','青'],['magenta','マゼンタ']])html+=range('g.'+k,label+' デンシティー',g[k],-1,1)+range('g.sat'+k[0].toUpperCase()+k.slice(1),label+' 彩度調整',g['sat'+k[0].toUpperCase()+k.slice(1)],-1,1);
+      html+='</details><details><summary>クリップの質感</summary>'+toggle('g.textureOn','クリップ質感 ON',g.textureOn)+controls('g.',g,[['grain','粒子',0,1],['bleed','色のにじみ',0,1],['scanlines','走査線',0,1]])+'</details>';
+      html+='<details open><summary>作品全体のルック・質感</summary><p class="sub">すべての映像に適用。字幕にはかかりません。</p><label>作品プリセット<select id="lookSelect"><option value="">選択してください</option>'+Object.keys(looks).map(k=>'<option>'+k+'</option>').join('')+'</select></label>'+toggle('l.lookOn','全体ルック ON',look.lookOn)+controls('l.',look,[...tone,['density','全体デンシティー',-1,2],['curveLow','カーブ：暗部',-.2,.2],['curveMid','カーブ：中間',-.2,.2],['curveHigh','カーブ：明部',-.2,.2],['fade','退色',0,.5]])+toggle('l.textureOn','全体質感 ON',look.textureOn)+controls('l.',look,[['grain','粒子',0,1],['bleed','色のにじみ',0,1],['scanlines','走査線',0,1]])+btn('lookReset','全体ルック・質感をリセット','wide')+'</details>';
+      html+='<div class="button-grid">'+btn('gradeAll','クリップ設定を全クリップに適用')+btn('gradeReset','選択クリップをリセット')+btn('presetSave','クリップ設定を保存')+btn('presetExport','クリップ設定をダウンロード')+'</div><label>保存済みクリップ設定<select id="presetSelect"><option value="">選択してください</option>'+Object.keys(presets).map(k=>'<option>'+esc(k)+'</option>').join('')+'</select></label>';
     }
   }
   $('#panel').innerHTML=html;
@@ -83,10 +92,12 @@ for(const selector of ['#import','#firstImport'])$(selector).onclick=()=>chooseM
 function updateTabs(){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));}
 $('#tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){tab=b.dataset.tab;updateTabs();panel();}};
 $('#timeline').onclick=e=>{const b=e.target.closest('[data-select]');if(b){stop();selected=b.dataset.select;const c=current();time=p.clips.includes(c)?layout(p).find(x=>x.id===c.id).start:c.start;if(p.texts.includes(c))tab='text';else if(p.audio.includes(c))tab='audio';updateTabs();refresh();}else{stop();const r=$('#timeline').getBoundingClientRect();time=clamp(Math.round((e.clientX-r.left)/zoom*p.fps)/p.fps,0,total(p));refresh(false);}};
-$('#panel').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.select){stop();selected=b.dataset.select;const item=current();if(p.texts.includes(item))time=item.start;refresh();return;}const action=b.dataset.action,c=current();if(['import','srt','font'].includes(action)){if(action==='import')chooseMedia();else $(action==='srt'?'#srtInput':'#fontInput').click();return;}
+$('#panel').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.select){stop();selected=b.dataset.select;const item=current();if(p.texts.includes(item))time=item.start;refresh();return;}const action=b.dataset.action,c=current();if(['import','srt','font'].includes(action)){if(action==='import')chooseMedia();else $(action==='srt'?'#srtInput':'#fontInput').click();return;}
   if(action==='presetExport'){saveBlob(new Blob([JSON.stringify({type:'density-grade',grade:c.grade},null,2)],{type:'application/json'}),'look.density.json');return;}
   if(action==='presetSave'){const name=prompt('プリセット名');if(name){presets[name]=structuredClone(c.grade);try{localStorage.setItem('density-presets',JSON.stringify(presets));}catch{status('保存容量が不足しています。設定をダウンロードしてください');}panel();}return;}
+  if(action==='referenceView'||action==='matchColor'){await compareClips(action==='matchColor');return;}
   checkpoint();
+  if(action==='lookReset')p.look=gradeDefault();
   if(action==='fill'||action==='fit'){c.fit=action==='fill'?'cover':'contain';c.zoom=1;c.offsetX=0;c.offsetY=0;}
   if(action==='positionReset'){c.offsetX=0;c.offsetY=0;}
   if(action==='addText'){const t={id:id(),text:'テキスト',...textPlacement(p,time),font:'sans-serif',size:5,x:50,y:85,stroke:3,color:'#ffffff',outline:'#000000',bold:false,background:false};p.texts.push(t);selected=t.id;time=t.start;}
@@ -104,12 +115,16 @@ let gestureKey=null;
 $('#panel').addEventListener('focusin',()=>gestureKey=null);
 $('#panel').addEventListener('pointerdown',()=>gestureKey=null);
 function editControl(e){const el=e.target,c=current();if(!c)return;
-  if(el.id==='presetSelect'){if(el.value){checkpoint();c.grade=structuredClone(presets[el.value]);refresh();}return;}
+  if(el.id==='referenceClip'){checkpoint();p.referenceClip=el.value;return;}
+  if(el.id==='lookSelect'){if(looks[el.value]){checkpoint();p.look={...gradeDefault(),...looks[el.value]};refresh();}return;}
+  if(el.dataset.colorToggle){checkpoint();const [scope,key]=el.dataset.colorToggle.split('.');(scope==='g'?c.grade:p.look)[key]=el.checked?1:0;refresh(false);return;}
+  if(el.id==='presetSelect'){if(el.value){checkpoint();c.grade={...gradeDefault(),...structuredClone(presets[el.value])};refresh();}return;}
   const key=el.dataset.key,field=el.dataset.field;if(!key&&!field)return;
   if(gestureKey!==(key||field)){checkpoint();gestureKey=key||field;}
   if(field)c[field]=el.type==='checkbox'?el.checked:el.value;
   else{let v=Number(el.value);if(!Number.isFinite(v)||el.value==='')return;v=clamp(v,Number(el.min),Number(el.max));
-    if(key.startsWith('g.'))c.grade[key.slice(2)]=v;
+    if(key.startsWith('l.'))p.look[key.slice(2)]=v;
+    else if(key.startsWith('g.'))c.grade[key.slice(2)]=v;
     else if(key==='target'){const speed=(c.out-c.in)/frameDuration(v,p.fps);if(speed<.05||speed>20){status('指定した尺では速度が範囲外になります（0.05〜20倍）');return;}c.requested=v;c.speed=speed;}
     else if(key==='in'||key==='out'){const a=assets.get(c.asset)||p.assets.find(a=>a.id===c.asset);const limit=a.kind==='image'?86400:a.duration;if(key==='in')c.in=clamp(v,0,c.out-.001);else c.out=clamp(v,c.in+.001,limit);c.requested=null;}
     else if(key==='start'&&p.texts.includes(c))c.start=Math.min(v,c.end-.001);
@@ -143,10 +158,35 @@ $('#projectInput').onchange=async e=>{const file=e.target.files[0];if(!file)retu
 $('#newProject').onclick=()=>{if(confirm('新規プロジェクトに切り替えますか？未保存の編集は先に保存してください。')){checkpoint();p=newProject();selected=null;time=0;$('#projectDialog').close();refresh();}};
 $('#srtInput').onchange=async e=>{const file=e.target.files[0];if(!file)return;const cues=parseSrt(await file.text());checkpoint();for(const cue of cues)p.texts.push({id:id(),...cue,font:'sans-serif',size:5,x:50,y:85,stroke:3,color:'#ffffff',outline:'#000000',bold:false,background:false});selected=p.texts.at(-1)?.id;refresh();status(`${cues.length}件の字幕を追加しました`);e.target.value='';};
 $('#fontInput').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const name='Custom_'+file.name.replace(/[^a-zA-Z0-9]/g,'_'),font=new FontFace(name,await file.arrayBuffer());await font.load();document.fonts.add(font);if(!fonts.includes(name)){fonts.push(name);fontNames.push(file.name);}checkpoint();if(current()&&p.texts.includes(current()))current().font=name;refresh();}catch(error){status('フォントを読み込めませんでした：'+error.message);}e.target.value='';};
-$('#exportOpen').onclick=()=>{stop();$('#exportInfo').textContent=`${p.fps} fps · ${Math.round(total(p)*p.fps)}フレーム · 実際の尺 ${(Math.round(total(p)*p.fps)/p.fps).toFixed(3)}秒`;$('#exportDialog').showModal();};
-$('#exportStart').onclick=async()=>{if(busy)return;const missing=[...p.clips,...p.audio].some(c=>!assets.has(c.asset));if(missing){$('#exportStatus').textContent='未接続の素材があります。素材を再接続してください。';return;}busy=true;stop();$('#workspace').inert=true;$('#exportStart').disabled=true;$('#exportClose').disabled=true;$('#exportCancel').hidden=false;$('#download').hidden=true;$('#exportStatus').textContent='書き出し準備中…';$('#progress').value=0;exportController=new AbortController();try{const snapshot=structuredClone(p);const blob=await exportVideo(snapshot,{long:Number($('#resolution').value),mbps:Number($('#bitrate').value),signal:exportController.signal,onProgress:n=>{$('#progress').value=n;$('#exportStatus').textContent=`書き出し中 ${Math.round(n*100)}%`;}});if(downloadUrl)URL.revokeObjectURL(downloadUrl);downloadUrl=URL.createObjectURL(blob);$('#download').href=downloadUrl;$('#download').download=(p.name||'video')+'.mp4';$('#download').hidden=false;$('#exportStatus').textContent=`完成 · ${(blob.size/1048576).toFixed(1)} MB。「保存」を押してください。`;}catch(e){$('#exportStatus').textContent=e.message;}finally{busy=false;$('#workspace').inert=false;$('#exportStart').disabled=false;$('#exportClose').disabled=false;$('#exportCancel').hidden=true;}};
+$('#exportOpen').onclick=()=>{stop();$('#exportFps').value=p.fps;$('#exportInfo').textContent=`${p.fps} fps · ${Math.round(total(p)*p.fps)}フレーム · 実際の尺 ${(Math.round(total(p)*p.fps)/p.fps).toFixed(3)}秒`;$('#exportDialog').showModal();};
+$('#exportStart').onclick=async()=>{if(busy)return;const missing=[...p.clips,...p.audio].some(c=>!assets.has(c.asset));if(missing){$('#exportStatus').textContent='未接続の素材があります。素材を再接続してください。';return;}busy=true;stop();$('#workspace').inert=true;$('#exportStart').disabled=true;$('#exportClose').disabled=true;$('#exportCancel').hidden=false;$('#download').hidden=true;$('#exportPreview').pause();$('#exportPreview').hidden=true;$('#exportPreview').removeAttribute('src');$('#exportStatus').textContent='書き出し準備中…';$('#progress').value=0;exportController=new AbortController();try{const snapshot=structuredClone(p);snapshot.fps=Number($('#exportFps').value);const trial=Number($('#trialLength').value);const trialStart=trial?Math.min(time,Math.max(0,total(snapshot)-1/snapshot.fps)):0;const blob=await exportVideo(snapshot,{long:Number($('#resolution').value),mbps:Number($('#bitrate').value),start:trialStart,length:trial||null,signal:exportController.signal,onProgress:n=>{$('#progress').value=n;$('#exportStatus').textContent=`書き出し中 ${Math.round(n*100)}%`;}});if(downloadUrl)URL.revokeObjectURL(downloadUrl);downloadUrl=URL.createObjectURL(blob);$('#download').href=downloadUrl;$('#download').download=(p.name||'video')+(trial?'-test':'')+'.mp4';$('#exportPreview').src=downloadUrl;$('#exportPreview').hidden=false;$('#download').hidden=false;$('#exportStatus').textContent=`完成 · ${(blob.size/1048576).toFixed(1)} MB。「保存」を押してください。`;}catch(e){$('#exportStatus').textContent=e.message;}finally{busy=false;$('#workspace').inert=false;$('#exportStart').disabled=false;$('#exportClose').disabled=false;$('#exportCancel').hidden=true;}};
 $('#exportCancel').onclick=()=>exportController?.abort();$('#exportDialog').addEventListener('cancel',e=>{if(busy)e.preventDefault();});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();});
 window.addEventListener('beforeunload',e=>{if(p.clips.length||p.audio.length||p.texts.length){e.preventDefault();e.returnValue='';}});
 document.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)||$('dialog[open]')||busy)return;if(e.code==='Space'){e.preventDefault();play();}if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();$(e.shiftKey?'#redo':'#undo').click();}});
 refresh();
+
+let comparisonRenderer;
+async function compareClips(apply){
+ const c=current(),ref=p.clips.find(x=>x.id===p.referenceClip);
+ if(!c||!p.clips.includes(c)||!ref||ref.id===c.id){status('別の基準クリップを選択してください');return;}
+ if(busy)return;stop();busy=true;$('#workspace').inert=true;status('中央フレームを比較中…');
+ try{
+  comparisonRenderer??=new Renderer(document.createElement('canvas'));
+  const [w,h]=dimensions(p.ratio,320);comparisonRenderer.canvas.width=w;comparisonRenderer.canvas.height=h;
+  const sample=async(source)=>{
+   const copy=structuredClone(source);copy.transition=0;copy.videoFadeIn=0;copy.videoFadeOut=0;
+   copy.grade={...gradeDefault(),...copy.grade,lookOn:0,textureOn:0,matchStrength:0};
+   const project={...p,clips:[copy],texts:[],audio:[],look:gradeDefault()};
+   await comparisonRenderer.render(project,duration(copy)/2);
+   const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(comparisonRenderer.canvas,0,0);
+   return {url:canvas.toDataURL('image/jpeg',.85),mean:imageMean(ctx.getImageData(0,0,w,h).data)};
+  };
+  const source=await sample(c),reference=await sample(ref);
+  if(apply){checkpoint();Object.assign(c.grade,matchGains(source.mean,reference.mean));}
+  panel();
+  $('#referenceResult').innerHTML='<div class="reference-pair"><figure><img alt="選択クリップの補正後・色合わせ前" src="'+source.url+'"><figcaption>選択：'+esc(c.name)+'</figcaption></figure><figure><img alt="基準クリップ" src="'+reference.url+'"><figcaption>基準：'+esc(ref.name)+'</figcaption></figure></div>';
+  status(apply?'色合わせを適用しました。強度を調整できます。':'クリップ補正後・ルック適用前の中央フレームです。');
+ }catch(e){status(e.message);}finally{busy=false;$('#workspace').inert=false;requestRender();}
+}
+$('#exportFps').onchange=()=>{$('#exportInfo').textContent=$('#exportFps').value+' fps · MP4 / H.264 / AAC';};

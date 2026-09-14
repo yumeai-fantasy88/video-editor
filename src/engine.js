@@ -3,7 +3,7 @@ import {registerAacEncoder} from '@mediabunny/aac-encoder';
 import {Grader} from './grade.js';
 import {ensureFonts} from './fonts.js';
 import {readVideoFrame} from './video-frame.js';
-import {layout,total,duration,gainAt,clamp} from './model.js';
+import {layout,total,duration,gainAt,clamp,gradeDefault} from './model.js';
 export const assets=new Map();
 export async function loadAsset(file,assetId=crypto.randomUUID()){
   const a={id:assetId,name:file.name,size:file.size,modified:file.lastModified,kind:file.type.startsWith('image/')?'image':'video',file};
@@ -24,9 +24,9 @@ export function assetMeta(a){return {id:a.id,name:a.name,size:a.size,modified:a.
 export function dimensions(ratio,long=1920){const [x,y]=ratio.split(':').map(Number);return x>=y?[long,Math.round(long*y/x/2)*2]:[Math.round(long*x/y/2)*2,long];}
 export class Renderer {
   constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d',{alpha:false});this.grader=new Grader();this.layer=document.createElement('canvas');this.iterators=new Map();}
-  async prepare(p,fps){for(const c of layout(p)){const a=assets.get(c.asset);if(!a?.video)continue;const first=Math.ceil((c.start-1e-8)*fps),last=Math.ceil((c.end-1e-8)*fps);function* times(){for(let f=first;f<last;f++)yield Math.min(c.out-1e-6,c.in+(f/fps-c.start)*c.speed);}
+  async prepare(p,fps,startFrame=0,endFrame=Infinity){for(const c of layout(p)){const a=assets.get(c.asset);if(!a?.video)continue;const first=Math.max(startFrame,Math.ceil((c.start-1e-8)*fps)),last=Math.min(endFrame,Math.ceil((c.end-1e-8)*fps));function* times(){for(let f=first;f<last;f++)yield Math.min(c.out-1e-6,c.in+(f/fps-c.start)*c.speed);}
     const sink=new CanvasSink(a.video,{poolSize:1});this.iterators.set(c.id,sink.canvasesAtTimestamps(times()));}}
-  async close(){for(const it of this.iterators.values())await it.return();this.iterators.clear();}
+  async close(){for(const it of this.iterators.values())await it.return();this.iterators.clear();this.grader?.dispose();}
   async render(p,time,before=false){const {canvas}=this,w=canvas.width,h=canvas.height;
     await ensureFonts(p.texts.filter(t=>time>=t.start&&time<t.end));
     this.composite??=document.createElement('canvas');
@@ -41,11 +41,16 @@ export class Renderer {
       const angle=c.rotation*Math.PI/180,cos=Math.abs(Math.cos(angle)),sin=Math.abs(Math.sin(angle));
       const scale=(c.fit==='cover'?Math.max((w*cos+h*sin)/source.width,(w*sin+h*cos)/source.height):Math.min(w/(source.width*cos+source.height*sin),h/(source.width*sin+source.height*cos)))*c.zoom;
       lc.scale(scale,scale);lc.drawImage(source,-source.width/2,-source.height/2);lc.restore();
-      const picture=before?this.layer:this.grader.render(this.layer,c.grade);const t=time-c.start;
+      const picture=before?this.layer:this.grader.render(this.layer,c.grade,time);const t=time-c.start;
       const fade=Math.min(1,c.videoFadeIn?t/c.videoFadeIn:1,c.videoFadeOut?(c.duration-t)/c.videoFadeOut:1);
       // Fade incoming image over outgoing image; black for clip fades.
       const alpha=c.overlap&&t<c.overlap?t/c.overlap:1;
       ctx.save();ctx.globalAlpha=clamp(alpha,0,1);ctx.drawImage(picture,0,0);ctx.fillStyle=`rgba(0,0,0,${1-clamp(fade,0,1)})`;ctx.fillRect(0,0,w,h);ctx.restore();
+    }
+    if(!before&&p.look){
+      const g={...gradeDefault(),...p.look};
+      // Global look applies to the picture before captions; its switch includes tonal look settings.
+      ctx.drawImage(this.grader.render(this.composite,{...g,noiseOn:0,correctionOn:g.lookOn},time),0,0);
     }
     for(const t of p.texts.filter(t=>time>=t.start&&time<t.end)){
       ctx.save();const size=h*t.size/100;ctx.font=`${t.bold?'700':'400'} ${size}px ${t.font}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineJoin='round';
@@ -78,8 +83,10 @@ export async function mixAudio(p,start,length,rate=48000){
   for(let ch=0;ch<2;ch++){const dst=out.getChannelData(ch);for(let i=0;i<count;i++)dst[i]=clamp(dst[i],-1,1);}
   return out;
 }
-export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal}){
-  const [width,height]=dimensions(p.ratio,long),fps=p.fps,frames=Math.max(1,Math.round(total(p)*fps));
+export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal,start=0,length=null}){
+  const [width,height]=dimensions(p.ratio,long),fps=p.fps;
+  const allFrames=Math.max(1,Math.round(total(p)*fps)),startFrame=clamp(Math.round(start*fps),0,allFrames-1);
+  const frames=length==null?allFrames-startFrame:Math.max(1,Math.min(allFrames-startFrame,Math.round(length*fps)));
   if(!p.clips.length)throw Error('映像または画像を追加してください');
   if(!await canEncodeVideo('avc',{width,height,bitrate:mbps*1e6}))throw Error('このブラウザはH.264書き出しに対応していません。OS・ブラウザを更新するかPCで開いてください');
   const hasAudio=[...p.clips,...p.audio].some(c=>c.volume>0&&assets.get(c.asset)?.audio);
@@ -94,12 +101,12 @@ export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal}
   if(audio)output.addAudioTrack(audio);
   let wake;
   try{try{wake=await navigator.wakeLock?.request('screen');}catch{}
-    await renderer.prepare(p,fps);await output.start();
+    await renderer.prepare(p,fps,startFrame,startFrame+frames);await output.start();
     for(let f=0;f<frames;f++){
-      if(signal.aborted)throw Error('書き出しを中止しました');
+      if(signal?.aborted)throw Error('書き出しを中止しました');
       if(document.hidden)throw Error('画面がバックグラウンドになったため中止しました。画面を開いたまま再実行してください');
-      if(audio&&f%fps===0)await audio.add(await mixAudio(p,f/fps,Math.min(1,(frames-f)/fps)));
-      await renderer.render(p,f/fps);await video.add(f/fps,1/fps);
+      if(audio&&f%fps===0)await audio.add(await mixAudio(p,(startFrame+f)/fps,Math.min(1,(frames-f)/fps)));
+      await renderer.render(p,(startFrame+f)/fps);await video.add(f/fps,1/fps);
       if(f%5===0){onProgress(f/frames);await new Promise(r=>setTimeout(r,0));}
     }
     video.close();audio?.close();await output.finalize();onProgress(1);return new Blob([target.buffer],{type:'video/mp4'});

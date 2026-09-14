@@ -2,13 +2,14 @@ name: Verify Video Editor
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', 'README.md']
   pull_request:
 permissions:
   contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,6 +20,16 @@ jobs:
       - run: npm test
       - run: npm run check
       - run: npm run build
+      - run: npm install --no-save --package-lock=false playwright@1.55.0
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/browser-smoke.mjs
+      - name: Expose verified public bundle for review
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const bundle=readFileSync('docs/app.js','utf8');
+          for(let i=0;i<bundle.length;i+=8000)console.log('VIDEO_EDITOR_BUILD '+JSON.stringify(bundle.slice(i,i+8000)));
+          NODE
       - uses: actions/upload-artifact@v4
         with:
           name: video-editor-build
