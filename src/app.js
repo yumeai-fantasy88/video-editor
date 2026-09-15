@@ -1,10 +1,11 @@
 import {looks,matchGains,imageMean} from './color-settings.js';
 import {newProject,id,clip,layout,total,duration,frameDuration,splitClip,gradeDefault,parseSrt,validateProject,clamp} from './model.js';
-import {assets,loadAsset,assetMeta,Renderer,dimensions,mixAudio,exportVideo} from './engine.js';
+import {assets,loadAsset,assetMeta,Renderer,dimensions,mixAudio,exportVideo,AudioReadSession} from './engine.js';
 import {extraFonts} from './fonts.js';
 import {pictureEnd,textPlacement} from './model.js';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let p=newProject(),selected=null,tab='edit',time=0,before=false,playing=false,playingToken=0,renderBusy=false,renderAgain=false,busy=false,zoom=60,undo=[],redo=[],reconnecting=false,audioContext,scheduled=[],exportController,downloadUrl;
+let previewAudioSession;
 let renderer;try{renderer=new Renderer($('#preview'));}catch(e){status(e.message);}
 let fonts=['system-ui','sans-serif','serif','monospace','"Hiragino Sans", sans-serif','"Hiragino Mincho ProN", serif','"Yu Gothic", sans-serif','"Yu Mincho", serif'];
 const fontNames=['標準','ゴシック','明朝','等幅','ヒラギノ角ゴ','ヒラギノ明朝','游ゴシック','游明朝'];
@@ -136,13 +137,13 @@ function editControl(e){const el=e.target,c=current();if(!c)return;if(e.type==='
 }
 $('#panel').addEventListener('input',editControl);
 $('#panel').addEventListener('change',e=>{if(e.target.tagName==='SELECT'||e.target.type==='checkbox')editControl(e);if(e.target.dataset.key){gestureKey=null;panel();}});
-function stop(){playing=false;playingToken++;$('#play').textContent='▶';$('#play').setAttribute('aria-label','再生');for(const s of scheduled)try{s.stop();}catch{}scheduled=[];}
-async function play(){if(playing){stop();return;}if(!p.clips.length||busy)return;audioContext??=new AudioContext();await audioContext.resume();if(time>=total(p)-1/p.fps)time=0;playing=true;const token=++playingToken;$('#play').textContent='Ⅱ';$('#play').setAttribute('aria-label','一時停止');const base=time;let startAt;
-  try{const first=await mixAudio(p,base,Math.min(1,total(p)-base));if(token!==playingToken)return;startAt=audioContext.currentTime+.08;
+function stop(){const session=previewAudioSession;previewAudioSession=null;void session?.close();playing=false;playingToken++;$('#play').textContent='▶';$('#play').setAttribute('aria-label','再生');for(const s of scheduled)try{s.stop();}catch{}scheduled=[];}
+async function play(){if(playing){stop();return;}if(!p.clips.length||busy)return;audioContext??=new AudioContext();await audioContext.resume();if(time>=total(p)-1/p.fps)time=0;playing=true;const token=++playingToken;$('#play').textContent='Ⅱ';$('#play').setAttribute('aria-label','一時停止');const base=time,session=new AudioReadSession();previewAudioSession=session;let startAt;
+  try{const first=await mixAudio(p,base,Math.min(1,total(p)-base),48000,session);if(token!==playingToken)return;startAt=audioContext.currentTime+.08;
     const schedule=(buffer,at)=>{const s=audioContext.createBufferSource();s.buffer=buffer;s.connect(audioContext.destination);s.start(at);scheduled.push(s);s.onended=()=>scheduled=scheduled.filter(x=>x!==s);};schedule(first,startAt);
-    (async()=>{let next=base+first.duration;try{while(token===playingToken&&next<total(p)){if(next-base>audioContext.currentTime-startAt+1){await new Promise(r=>setTimeout(r,80));continue;}const length=Math.min(1,total(p)-next),buffer=await mixAudio(p,next,length);if(token!==playingToken)return;const at=startAt+next-base;if(at<audioContext.currentTime-.05){stop();status('音声プレビューが追いつきません。停止して再生し直すか、書き出して確認してください');return;}schedule(buffer,Math.max(at,audioContext.currentTime));next+=buffer.duration;}}catch(e){stop();status(e.message);}})();
+    (async()=>{let next=base+first.duration;try{while(token===playingToken&&next<total(p)){if(next-base>audioContext.currentTime-startAt+1){await new Promise(r=>setTimeout(r,80));continue;}const length=Math.min(1,total(p)-next),buffer=await mixAudio(p,next,length,48000,session);if(token!==playingToken)return;const at=startAt+next-base;if(at<audioContext.currentTime-.05){stop();status('音声プレビューが追いつきません。停止して再生し直すか、書き出して確認してください');return;}schedule(buffer,Math.max(at,audioContext.currentTime));next+=buffer.duration;}}catch(e){if(token===playingToken){stop();status(e.message);}}finally{await session.close();}})();
     const tick=()=>{if(token!==playingToken)return;time=clamp(base+audioContext.currentTime-startAt,0,total(p));$('#scrub').value=time;$('#timecode').textContent=`${format(time)} / ${format(total(p))}`;const head=$('.playhead');if(head)head.style.left=time*zoom+'px';requestRender();if(time>=total(p)){stop();return;}requestAnimationFrame(tick);};requestAnimationFrame(tick);
-  }catch(e){stop();status(e.message);}
+  }catch(e){if(token===playingToken){stop();status(e.message);}await session.close();}
 }
 $('#play').onclick=play;$('#scrub').oninput=e=>{stop();time=Number(e.target.value);refresh(false);};
 $('#prevFrame').onclick=()=>{stop();time=Math.max(0,time-1/p.fps);refresh(false);};$('#nextFrame').onclick=()=>{stop();time=Math.min(total(p),time+1/p.fps);refresh(false);};
@@ -190,3 +191,4 @@ async function compareClips(apply){
  }catch(e){status(e.message);}finally{busy=false;$('#workspace').inert=false;requestRender();}
 }
 $('#exportFps').onchange=()=>{$('#exportInfo').textContent=$('#exportFps').value+' fps · MP4 / H.264 / AAC';};
+

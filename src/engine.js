@@ -1,3 +1,5 @@
+import {AudioReadSession} from './audio-stream.js';
+export {AudioReadSession} from './audio-stream.js';
 import {Input,ALL_FORMATS,BlobSource,CanvasSink,AudioBufferSink,Output,BufferTarget,Mp4OutputFormat,CanvasSource,AudioBufferSource,Quality,canEncodeVideo,canEncodeAudio} from 'mediabunny';
 import {registerAacEncoder} from '@mediabunny/aac-encoder';
 import {Grader} from './grade.js';
@@ -63,17 +65,20 @@ export class Renderer {
     this.ctx.drawImage(this.composite,0,0);
   }
 }
-export async function mixAudio(p,start,length,rate=48000){
+export async function mixAudio(p,start,length,rate=48000,session=null){
+  const sampleCeil=n=>Math.ceil(n-1e-7);
+  const ownSession=!session;session??=new AudioReadSession();
+  try{
   const count=Math.max(1,Math.round(length*rate)),out=new AudioBuffer({length:count,numberOfChannels:2,sampleRate:rate});
   const tracks=[...layout(p),...p.audio.map(c=>({...c,end:c.start+duration(c),duration:duration(c)}))];
   for(const c of tracks){if(!c.volume||c.end<=start||c.start>=start+length)continue;const a=assets.get(c.asset);if(!a)throw Error('音声素材が未接続です');if(!a.audioSink)continue;
     const left=Math.max(start,c.start),right=Math.min(start+length,c.end);const from=c.in+(left-c.start)*c.speed,to=c.in+(right-c.start)*c.speed;
-    for await(const b of a.audioSink.buffers(from,to)){
-      const lo=Math.max(0,Math.ceil((c.start+(b.timestamp-c.in)/c.speed-start)*rate),Math.ceil((left-start)*rate));
-      const hi=Math.min(count,Math.ceil((c.start+(b.timestamp+b.duration-c.in)/c.speed-start)*rate),Math.ceil((right-start)*rate));
+    for await(const b of session.buffers(c.id,a.audioSink,from,to)){
+      const lo=Math.max(0,sampleCeil((c.start+(b.timestamp-c.in)/c.speed-start)*rate),sampleCeil((left-start)*rate));
+      const hi=Math.min(count,sampleCeil((c.start+(b.timestamp+b.duration-c.in)/c.speed-start)*rate),sampleCeil((right-start)*rate));
       for(let ch=0;ch<2;ch++){const dst=out.getChannelData(ch),src=b.buffer.getChannelData(Math.min(ch,b.buffer.numberOfChannels-1));
         for(let i=lo;i<hi;i++){const t=start+i/rate,position=(c.in+(t-c.start)*c.speed-b.timestamp)*b.buffer.sampleRate;const j=Math.floor(Math.max(0,position)),f=Math.max(0,position)-j;
-          const value=(src[Math.min(j,src.length-1)]||0)*(1-f)+(src[Math.min(j+1,src.length-1)]||0)*f;
+          const value=(src[Math.min(j,src.length-1)]||0)*(1-f)+(j+1<src.length?src[j+1]:(b.nextBuffer?.getChannelData(Math.min(ch,b.nextBuffer.numberOfChannels-1))[0]??src[src.length-1]))*f;
           dst[i]+=value*gainAt(c,t-c.start,c.duration);
         }
       }
@@ -82,6 +87,7 @@ export async function mixAudio(p,start,length,rate=48000){
   // Hard limiting makes excessive summed levels explicit and deterministic.
   for(let ch=0;ch<2;ch++){const dst=out.getChannelData(ch);for(let i=0;i<count;i++)dst[i]=clamp(dst[i],-1,1);}
   return out;
+  }finally{if(ownSession)await session.close();}
 }
 export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal,start=0,length=null}){
   const [width,height]=dimensions(p.ratio,long),fps=p.fps;
@@ -99,16 +105,18 @@ export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal,
   output.addVideoTrack(video,{frameRate:fps});
   const audio=hasAudio?new AudioBufferSource({codec:'aac',quality:new Quality({bitrate:192000})}):null;
   if(audio)output.addAudioTrack(audio);
+  const audioSession=new AudioReadSession();
   let wake;
   try{try{wake=await navigator.wakeLock?.request('screen');}catch{}
     await renderer.prepare(p,fps,startFrame,startFrame+frames);await output.start();
     for(let f=0;f<frames;f++){
       if(signal?.aborted)throw Error('書き出しを中止しました');
       if(document.hidden)throw Error('画面がバックグラウンドになったため中止しました。画面を開いたまま再実行してください');
-      if(audio&&f%fps===0)await audio.add(await mixAudio(p,(startFrame+f)/fps,Math.min(1,(frames-f)/fps)));
+      if(audio&&f%fps===0)await audio.add(await mixAudio(p,(startFrame+f)/fps,Math.min(1,(frames-f)/fps),48000,audioSession));
       await renderer.render(p,(startFrame+f)/fps);await video.add(f/fps,1/fps);
       if(f%5===0){onProgress(f/frames);await new Promise(r=>setTimeout(r,0));}
     }
     video.close();audio?.close();await output.finalize();onProgress(1);return new Blob([target.buffer],{type:'video/mp4'});
-  }catch(error){try{await output.cancel();}catch{}throw error;}finally{await renderer.close();await wake?.release();}
+  }catch(error){try{await output.cancel();}catch{}throw error;}finally{await audioSession.close();await renderer.close();await wake?.release();}
 }
+
