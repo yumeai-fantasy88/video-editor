@@ -69,6 +69,24 @@ try{
  assert.equal(await texture.evaluate(el=>el.open),true);
  await page.locator('[data-tab="edit"]').click();await page.locator('[data-tab="color"]').click();
  assert.equal(await look.evaluate(el=>el.open),true);assert.equal(await texture.evaluate(el=>el.open),true);
+ // Exercise the iPhone-style full-window fallback with the original rendered canvas.
+ await page.evaluate(()=>{window.originalPreview=document.querySelector('#preview');document.querySelector('#fullscreenPreview').requestFullscreen=()=>Promise.reject(new Error('unsupported'));});
+ await page.locator('#fullscreenOpen').click();
+ assert.equal(await page.locator('#fullscreenPreview').evaluate(el=>el.open),true);
+ assert.equal(await page.evaluate(()=>document.querySelector('#fullscreenPreview #preview')===window.originalPreview),true);
+ await page.locator('#scrub').evaluate(el=>{el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));});
+ for(const size of [{width:390,height:844},{width:844,height:390}]){
+   await page.setViewportSize(size);
+   const bounds=await page.locator('#fullscreenClose').boundingBox();assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=size.width&&bounds.y+bounds.height<=size.height);
+   const screen=await page.locator('#fullscreenPreview .screen').boundingBox();assert.ok(screen.width>0&&screen.height>0&&screen.y+screen.height<=size.height);
+ }
+ await page.locator('#fullscreenClose').click();
+ assert.equal(await page.locator('#fullscreenPreview').evaluate(el=>el.open),false);
+ assert.equal(await page.evaluate(()=>document.querySelector('#workspace #preview')===window.originalPreview),true);
+ assert.equal(await page.locator('#scrub').inputValue(),'1');
+ await page.locator('#fullscreenOpen').click();await page.keyboard.press('Escape');
+ assert.equal(await page.locator('#fullscreenPreview').evaluate(el=>el.open),false);
+ await page.setViewportSize({width:390,height:844});
  await page.locator('#exportOpen').click();assert.deepEqual(await page.locator('#exportFps option').allTextContents(),['24','25','30','50','60']);
  assert.equal(await page.locator('#trialLength option').count(),3);
  assert.deepEqual(errors,[]);

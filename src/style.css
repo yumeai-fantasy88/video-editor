@@ -7,3 +7,16 @@
 @media(max-width:800px){.screen{width:min(100%,calc(36dvh * var(--preview-ratio,16 / 9)));height:auto;min-height:0;max-height:none;max-width:100%}.timeline-scroll{min-height:0}.viewer{padding-bottom:6px}}
 
 .reference-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}.reference-pair figure{margin:0;min-width:0}.reference-pair img{width:100%;display:block}.reference-pair figcaption{font-size:11px;overflow-wrap:anywhere}#panel details{border:1px solid var(--line);border-radius:8px;padding:12px;margin:12px 0}#panel summary{cursor:pointer;font-weight:600;margin-bottom:12px}#exportPreview{background:#000;margin-top:14px}
+
+/* Full-window fallback also works without the native Fullscreen API. */
+#fullscreenPreview{inset:0;margin:0;width:100vw;width:100dvw;height:100vh;height:100dvh;max-width:none;max-height:none;box-sizing:border-box;border:0;border-radius:0;background:#08090b;padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));overflow:hidden}
+#fullscreenPreview[open]{display:flex;flex-direction:column;gap:6px}
+.fullscreen-toolbar{display:flex;align-items:center;justify-content:space-between;flex:none;color:var(--muted)}
+.fullscreen-host{flex:1;min-height:0;min-width:0;display:flex}
+#fullscreenPreview .viewer{position:static;flex:1;min-height:0;display:flex;flex-direction:column;padding:0;gap:6px}
+#fullscreenPreview .viewer-top{display:none}
+#fullscreenPreview .screen{flex:1;min-height:0;width:100%;height:auto;aspect-ratio:auto;margin:0;border:0}
+#fullscreenPreview .transport,#fullscreenPreview #scrub{flex:none}
+#fullscreenPreview #scrub{width:100%;margin:4px 0 8px}
+#fullscreenOpen{white-space:nowrap}
+@media(max-width:480px){.viewer-top{flex-wrap:wrap}.viewer-top #projectName{flex:1;min-width:70px;width:70px}.viewer-top button{padding:8px}}
