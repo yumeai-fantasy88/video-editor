@@ -70,7 +70,7 @@ try{
  await page.locator('[data-tab="edit"]').click();await page.locator('[data-tab="color"]').click();
  assert.equal(await look.evaluate(el=>el.open),true);assert.equal(await texture.evaluate(el=>el.open),true);
  // Exercise the iPhone-style full-window fallback with the original rendered canvas.
- await page.evaluate(()=>{window.originalPreview=document.querySelector('#preview');document.querySelector('#fullscreenPreview').requestFullscreen=()=>Promise.reject(new Error('unsupported'));});
+ await page.evaluate(()=>{window.originalPreview=document.querySelector('#preview');document.documentElement.requestFullscreen=()=>Promise.reject(new Error('unsupported'));});
  await page.locator('#fullscreenOpen').click();
  assert.equal(await page.locator('#fullscreenPreview').evaluate(el=>el.open),true);
  assert.equal(await page.evaluate(()=>document.querySelector('#fullscreenPreview #preview')===window.originalPreview),true);

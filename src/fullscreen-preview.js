@@ -2,12 +2,13 @@
 export function initFullscreenPreview({canOpen,togglePlay}) {
   const dialog=document.querySelector('#fullscreenPreview');
   const viewer=document.querySelector('.viewer');
+  const nativeTarget=document.documentElement;
   const opener=document.querySelector('#fullscreenOpen');
   const closer=document.querySelector('#fullscreenClose');
   let placeholder,overflow,scrollX,scrollY,nativeActive=false;
   function close() {
     if(!placeholder)return;
-    if(document.fullscreenElement===dialog)document.exitFullscreen().catch(()=>{});
+    if(nativeActive&&document.fullscreenElement===nativeTarget)document.exitFullscreen().catch(()=>{});
     placeholder.replaceWith(viewer);placeholder=null;
     dialog.close();document.body.style.overflow=overflow;
     window.scrollTo(scrollX,scrollY);opener.setAttribute('aria-expanded','false');
@@ -21,15 +22,15 @@ export function initFullscreenPreview({canOpen,togglePlay}) {
     document.body.style.overflow='hidden';dialog.showModal();
     opener.setAttribute('aria-expanded','true');closer.focus({preventScroll:true});
     // A full-window dialog remains usable where native fullscreen is unavailable.
-    if(dialog.requestFullscreen)dialog.requestFullscreen().then(()=>{
-      if(!placeholder&&document.fullscreenElement===dialog)document.exitFullscreen().catch(()=>{});
+    if(!document.fullscreenElement&&nativeTarget.requestFullscreen)nativeTarget.requestFullscreen().then(()=>{
+      if(!placeholder&&document.fullscreenElement===nativeTarget)document.exitFullscreen().catch(()=>{});
     }).catch(()=>{});
   });
   closer.addEventListener('click',close);
   dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
   dialog.addEventListener('close',close);
   document.addEventListener('fullscreenchange',()=>{
-    if(document.fullscreenElement===dialog)nativeActive=true;
+    if(placeholder&&document.fullscreenElement===nativeTarget)nativeActive=true;
     else if(nativeActive)close();
   });
   dialog.addEventListener('keydown',e=>{
