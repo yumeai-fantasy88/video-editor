@@ -53,6 +53,22 @@ try{
  assert.deepEqual(result.neutral,result.bypass);assert.ok(Math.abs(result.neutral[0]-90)<=2);assert.ok(result.changed[0]>result.neutral[0]+30);
  assert.ok(result.maxAudioError<1e-5, 'AAC decoder continuity: '+result.maxAudioError);
  for(const e of result.exports){const length=e.fps===24?3:.5;assert.equal(e.codec,'avc');assert.equal(e.audioCodec,'aac');assert.equal(e.packets,e.fps*length);assert.ok(Math.abs(e.first)<.001);assert.ok(Math.abs(e.duration-length)<.1);}
+ // Exercise panel rebuilds with an imported image and mobile-width controls.
+ await page.setViewportSize({width:390,height:844});
+ await page.evaluate(async()=>{const canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;canvas.getContext('2d').fillRect(0,0,64,64);const blob=await new Promise(r=>canvas.toBlob(r));const dt=new DataTransfer();dt.items.add(new File([blob],'ui-fixture.png',{type:'image/png'}));const input=document.querySelector('#mediaInput');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));});
+ await page.waitForFunction(()=>document.querySelector('#timeline .block.video')&&!document.querySelector('#workspace').inert);
+ await page.locator('[data-tab="color"]').click();
+ const look=page.locator('[data-panel-section="clip-look"]'),texture=page.locator('[data-panel-section="clip-texture"]');
+ await look.locator('summary').click();await texture.locator('summary').click();
+ await page.locator('[data-panel-section="noise"] summary').click();
+ for(const key of ['g.density','g.grain']){
+   await page.locator('input[type="range"][data-key="'+key+'"]').evaluate(el=>{el.value='.3';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});
+   assert.equal(await look.evaluate(el=>el.open),true);assert.equal(await texture.evaluate(el=>el.open),true);assert.equal(await page.locator('[data-panel-section="noise"]').evaluate(el=>el.open),false);
+ }
+ await page.locator('#lookSelect').selectOption('Cinema Soft');
+ assert.equal(await texture.evaluate(el=>el.open),true);
+ await page.locator('[data-tab="edit"]').click();await page.locator('[data-tab="color"]').click();
+ assert.equal(await look.evaluate(el=>el.open),true);assert.equal(await texture.evaluate(el=>el.open),true);
  await page.locator('#exportOpen').click();assert.deepEqual(await page.locator('#exportFps option').allTextContents(),['24','25','30','50','60']);
  assert.equal(await page.locator('#trialLength option').count(),3);
  assert.deepEqual(errors,[]);
