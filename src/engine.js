@@ -1,7 +1,6 @@
 import {AudioReadSession} from './audio-stream.js';
 export {AudioReadSession} from './audio-stream.js';
 import {Input,ALL_FORMATS,BlobSource,CanvasSink,AudioBufferSink,Output,BufferTarget,Mp4OutputFormat,CanvasSource,AudioBufferSource,Quality,canEncodeVideo,canEncodeAudio} from 'mediabunny';
-import {registerAacEncoder} from '@mediabunny/aac-encoder';
 import {Grader} from './grade.js';
 import {ensureFonts} from './fonts.js';
 import {readVideoFrame} from './video-frame.js';
@@ -96,7 +95,10 @@ export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal,
   if(!p.clips.length)throw Error('映像または画像を追加してください');
   if(!await canEncodeVideo('avc',{width,height,bitrate:mbps*1e6}))throw Error('このブラウザはH.264書き出しに対応していません。OS・ブラウザを更新するかPCで開いてください');
   const hasAudio=[...p.clips,...p.audio].some(c=>c.volume>0&&assets.get(c.asset)?.audio);
-  if(hasAudio&&!await canEncodeAudio('aac',{sampleRate:48000,numberOfChannels:2}))registerAacEncoder();
+  if(hasAudio&&!await canEncodeAudio('aac',{sampleRate:48000,numberOfChannels:2})){
+    const {registerAacEncoder}=await import('@mediabunny/aac-encoder');
+    registerAacEncoder();
+  }
   await ensureFonts(p.texts);
   await document.fonts.ready;
   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
@@ -119,4 +121,3 @@ export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal,
     video.close();audio?.close();await output.finalize();onProgress(1);return new Blob([target.buffer],{type:'video/mp4'});
   }catch(error){try{await output.cancel();}catch{}throw error;}finally{await audioSession.close();await renderer.close();await wake?.release();}
 }
-
