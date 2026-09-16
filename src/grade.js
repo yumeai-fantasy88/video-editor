@@ -54,13 +54,13 @@ if(textureOn>.5){
  // Four-tap highlight diffusion: intentionally small enough for mobile preview/export.
  if(bloom>.0001){
   vec2 radius=vec2(.02,.02*pixelY/pixelX);
-  vec3 glow=vec3(0.);
-  glow+=texture2D(tex,uv+vec2(radius.x,0.)).rgb;
-  glow+=texture2D(tex,uv-vec2(radius.x,0.)).rgb;
-  glow+=texture2D(tex,uv+vec2(0.,radius.y)).rgb;
-  glow+=texture2D(tex,uv-vec2(0.,radius.y)).rgb;
-  glow*=.25;float bright=smoothstep(.42,.85,lum(glow));
-  c+=glow*bright*bloom*.48;
+  vec3 glow0=texture2D(tex,uv+vec2(radius.x,0.)).rgb;
+  vec3 glow1=texture2D(tex,uv-vec2(radius.x,0.)).rgb;
+  vec3 glow2=texture2D(tex,uv+vec2(0.,radius.y)).rgb;
+  vec3 glow3=texture2D(tex,uv-vec2(0.,radius.y)).rgb;
+  vec3 glow=(glow0+glow1+glow2+glow3)*.25;
+  float peak=max(max(lum(glow0),lum(glow1)),max(lum(glow2),lum(glow3)));
+  c+=glow*smoothstep(.35,.75,peak)*bloom*.55;
  }
  // Normalized distances keep the same effect at preview and export resolutions.
  if(bleed>.0001){
