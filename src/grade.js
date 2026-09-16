@@ -10,6 +10,8 @@ uniform float curveLow,curveMid,curveHigh,grain,bloom,bleed,scanlines;
 uniform float matchR,matchG,matchB,matchStrength;
 uniform float satRed,satYellow,satGreen,satCyan,satBlue,satMagenta;
 uniform float pixelX,pixelY,clock;
+uniform sampler2D glowTex,softTex;
+uniform float softness,shadowWarmth,shadowTint,lightWarmth,lightTint;
 float lum(vec3 c){return dot(c,vec3(.2126,.7152,.0722));}
 vec3 clean(vec2 at){
  vec3 center=texture2D(tex,at).rgb;
@@ -49,18 +51,18 @@ float hi=max(c.r,max(c.g,c.b)),lo=min(c.r,min(c.g,c.b));float chroma=clamp((hi-l
 float h=hue(c);float d=density+red*weight(h,0.)+yellow*weight(h,1./6.)+green*weight(h,2./6.)+cyan*weight(h,3./6.)+blue*weight(h,4./6.)+magenta*weight(h,5./6.);
 float mask=chroma*(1.-protect*smoothstep(.55,1.,l))*(1.-depth*smoothstep(.25,.85,l));
 c*=exp2(-d*mask*1.5);c=mix(c,vec3(.18),fade);
+// Split-tone inside the look switch; keep pure black and white anchored.
+float toneL=clamp(lum(c),0.,1.);
+vec3 shadowColor=vec3(.12*shadowWarmth-.06*shadowTint,.10*shadowTint,-.12*shadowWarmth-.04*shadowTint);
+vec3 lightColor=vec3(.12*lightWarmth-.06*lightTint,.10*lightTint,-.12*lightWarmth-.04*lightTint);
+c+=mix(shadowColor,lightColor,smoothstep(.2,.8,toneL))*(4.*toneL*(1.-toneL));
 }
 if(textureOn>.5){
- // Four-tap highlight diffusion: intentionally small enough for mobile preview/export.
+ // Blurred textures are low-resolution separable Gaussian passes, not displaced copies.
+ if(softness>.0001)c+=softness*.55*(texture2D(softTex,uv).rgb-src.rgb);
  if(bloom>.0001){
-  vec2 radius=vec2(.02,.02*pixelY/pixelX);
-  vec3 glow0=texture2D(tex,uv+vec2(radius.x,0.)).rgb;
-  vec3 glow1=texture2D(tex,uv-vec2(radius.x,0.)).rgb;
-  vec3 glow2=texture2D(tex,uv+vec2(0.,radius.y)).rgb;
-  vec3 glow3=texture2D(tex,uv-vec2(0.,radius.y)).rgb;
-  vec3 glow=(glow0+glow1+glow2+glow3)*.25;
-  float peak=max(max(lum(glow0),lum(glow1)),max(lum(glow2),lum(glow3)));
-  c+=glow*smoothstep(.35,.75,peak)*bloom*.55;
+  vec3 glow=texture2D(glowTex,uv).rgb;
+  c+=(1.-clamp(c,0.,1.))*glow*bloom*.45;
  }
  // Normalized distances keep the same effect at preview and export resolutions.
  if(bleed>.0001){
@@ -77,15 +79,83 @@ if(textureOn>.5){
  c*=1.-scanlines*.8*smoothstep(.2,.8,.5+.5*cos(uv.y*72.*6.2831853));
 }
 gl_FragColor=vec4(clamp(c,0.,1.),src.a);}`;
+// Auxiliary passes use texture coordinates without the canvas presentation flip.
+const blurFragment=`precision highp float;
+varying vec2 uv; uniform sampler2D tex; uniform vec2 direction; uniform float extract;
+vec4 sampleColor(vec2 at){
+ vec4 c=texture2D(tex,at);
+ if(extract>.5)c.rgb*=smoothstep(.55,.92,dot(c.rgb,vec3(.2126,.7152,.0722)));
+ return c;
+}
+void main(){
+ vec4 c=vec4(0.);float sum=0.;
+ for(int i=-8;i<=8;i++){
+  float x=float(i),weight=exp(-x*x/18.);
+  c+=sampleColor(uv+direction*x)*weight;sum+=weight;
+ }
+ gl_FragColor=c/sum;
+}`;
 export class Grader {
-  constructor(){this.canvas=document.createElement('canvas');const gl=this.gl=this.canvas.getContext('webgl',{preserveDrawingBuffer:true,alpha:true,premultipliedAlpha:false});if(!gl)throw Error('このブラウザではカラー処理を開始できません');
-    const compile=(type,source)=>{const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
-    const p=this.program=gl.createProgram();gl.attachShader(p,compile(gl.VERTEX_SHADER,'attribute vec2 pos; varying vec2 uv; void main(){uv=vec2((pos.x+1.)*.5,(1.-pos.y)*.5);gl_Position=vec4(pos,0.,1.);}'));gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));gl.useProgram(p);
-    gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);const loc=gl.getAttribLocation(p,'pos');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
-    this.texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.texture);for(const axis of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,axis,gl.CLAMP_TO_EDGE);for(const f of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,f,gl.LINEAR);
-    this.uniforms={};
+  constructor(){
+    this.canvas=document.createElement('canvas');
+    const gl=this.gl=this.canvas.getContext('webgl',{preserveDrawingBuffer:true,alpha:true,premultipliedAlpha:false});
+    if(!gl)throw Error('このブラウザではカラー処理を開始できません');
+    const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader;};
+    const program=(frag,flip)=>{
+      const p=gl.createProgram();
+      const v=compile(gl.VERTEX_SHADER,`attribute vec2 pos;varying vec2 uv;void main(){uv=vec2((pos.x+1.)*.5,${flip?'(1.-pos.y)':'(pos.y+1.)'}*.5);gl_Position=vec4(pos,0.,1.);}`),f=compile(gl.FRAGMENT_SHADER,frag);
+      gl.attachShader(p,v);gl.attachShader(p,f);gl.bindAttribLocation(p,0,'pos');gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);
+      if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));return p;
+    };
+    this.program=program(fragment,true);this.blurProgram=program(blurFragment,false);
+    gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+    this.texture=this.makeTexture();this.targets=[];this.uniforms={};
+    this.blurDirection=gl.getUniformLocation(this.blurProgram,'direction');this.blurExtract=gl.getUniformLocation(this.blurProgram,'extract');
+  }
+  makeTexture(){
+    const gl=this.gl,texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);
+    for(const axis of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,axis,gl.CLAMP_TO_EDGE);
+    for(const f of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,f,gl.LINEAR);return texture;
+  }
+  prepareTargets(w,h){
+    const gl=this.gl,scale=Math.min(1,256/Math.max(w,h)),bw=Math.max(1,Math.round(w*scale)),bh=Math.max(1,Math.round(h*scale));
+    if(this.blurWidth===bw&&this.blurHeight===bh)return;
+    this.blurWidth=bw;this.blurHeight=bh;gl.activeTexture(gl.TEXTURE0);
+    for(let i=0;i<3;i++){
+      const target=this.targets[i]??={texture:this.makeTexture(),framebuffer:gl.createFramebuffer()};
+      gl.bindTexture(gl.TEXTURE_2D,target.texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,bw,bh,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,target.framebuffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,target.texture,0);
+      if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('光の拡散バッファを作成できません');
+    }
+  }
+  blur(target,extract){
+    const gl=this.gl,w=this.blurWidth,h=this.blurHeight;
+    gl.useProgram(this.blurProgram);gl.viewport(0,0,w,h);gl.activeTexture(gl.TEXTURE0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,this.targets[0].framebuffer);gl.bindTexture(gl.TEXTURE_2D,this.texture);
+    gl.uniform2f(this.blurDirection,1/w,0);gl.uniform1f(this.blurExtract,extract?1:0);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,this.targets[target].framebuffer);gl.bindTexture(gl.TEXTURE_2D,this.targets[0].texture);
+    gl.uniform2f(this.blurDirection,0,1/h);gl.uniform1f(this.blurExtract,0);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    return this.targets[target].texture;
   }
   dispose(){this.gl.getExtension('WEBGL_lose_context')?.loseContext();}
-  render(source,grade,time=0){const gl=this.gl;const w=source.width,h=source.height;if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}gl.viewport(0,0,w,h);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,source);for(const [k,v] of Object.entries({...gradeDefault(),...grade,pixelX:1/w,pixelY:1/h,clock:Math.floor(time*24)})){this.uniforms[k]??=gl.getUniformLocation(this.program,k);gl.uniform1f(this.uniforms[k],v);}gl.drawArrays(gl.TRIANGLE_STRIP,0,4);return this.canvas;}
+  render(source,grade,time=0){
+    const gl=this.gl,w=source.width,h=source.height,g={...gradeDefault(),...grade};
+    if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,source);
+    let glow=this.texture,soft=this.texture;
+    if(g.textureOn>.5&&(g.bloom>.0001||g.softness>.0001)){
+      this.prepareTargets(w,h);
+      if(g.bloom>.0001)glow=this.blur(1,true);
+      if(g.softness>.0001)soft=this.blur(2,false);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.useProgram(this.program);gl.viewport(0,0,w,h);
+    for(const [unit,name,texture] of [[0,'tex',this.texture],[1,'glowTex',glow],[2,'softTex',soft]]){
+      gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,texture);gl.uniform1i(gl.getUniformLocation(this.program,name),unit);
+    }
+    for(const [k,v] of Object.entries({...g,pixelX:1/w,pixelY:1/h,clock:Math.floor(time*24)})){
+      this.uniforms[k]??=gl.getUniformLocation(this.program,k);gl.uniform1f(this.uniforms[k],v);
+    }
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);return this.canvas;
+  }
 }
-

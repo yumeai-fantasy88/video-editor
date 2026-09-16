@@ -1,3 +1,4 @@
+import {checkDreamcore} from './dreamcore-smoke.mjs';
 import {chromium} from 'playwright';
 import {build} from 'esbuild';
 import {createServer} from 'node:http';
@@ -5,7 +6,7 @@ import {readFile,mkdir,rm} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import assert from 'node:assert/strict';
 await mkdir('.browser-test',{recursive:true});
-await build({stdin:{contents:"export * from '../src/engine.js';export * from '../src/model.js';export * from '../src/grade.js';export {Input,BufferSource,ALL_FORMATS,CanvasSink,EncodedPacketSink,Output,BufferTarget,Mp4OutputFormat,AudioBufferSource,AudioBufferSink,Quality} from 'mediabunny';export {registerAacEncoder} from '@mediabunny/aac-encoder';",resolveDir:resolve('tests')},bundle:true,format:'esm',outfile:'.browser-test/entry.js'});
+await build({stdin:{contents:"export * from '../src/engine.js';export * from '../src/model.js';export * from '../src/grade.js';export {looks} from '../src/color-settings.js';export {Input,BufferSource,ALL_FORMATS,CanvasSink,EncodedPacketSink,Output,BufferTarget,Mp4OutputFormat,AudioBufferSource,AudioBufferSink,Quality} from 'mediabunny';export {registerAacEncoder} from '@mediabunny/aac-encoder';",resolveDir:resolve('tests')},bundle:true,format:'esm',outfile:'.browser-test/entry.js'});
 const root=resolve('.');
 const server=createServer(async(req,res)=>{try{const path=resolve(root,'.'+new URL(req.url,'http://localhost').pathname);if(!path.startsWith(root+'/'))throw Error();const body=await readFile(path);res.setHeader('Content-Type',({'.js':'text/javascript','.html':'text/html','.css':'text/css'})[extname(path)]||'application/octet-stream');res.end(body);}catch{res.statusCode=404;res.end();}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -14,6 +15,7 @@ try{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port+'/docs/index.html');
  await page.waitForSelector('#panel h2');
+ await checkDreamcore(page);
  const result=await page.evaluate(async()=>{
   const M=await import('/.browser-test/entry.js'),{Grader,gradeDefault}=M;
   const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.fillStyle='rgb(90,120,150)';ctx.fillRect(0,0,32,32);
@@ -124,7 +126,7 @@ try{
  await page.locator('[data-action="clipTextureReset"]').click();
  assert.equal(await page.locator('input[type="range"][data-key="g.grain"]').inputValue(),'0');
  await page.locator('#lookSelect').selectOption('Dreamcore');
- assert.ok((await page.locator('#lookDescription').textContent()).includes('夢の中'));
+ assert.ok((await page.locator('#lookDescription').textContent()).includes('緑寄りの影'));
  await page.locator('[data-action="allColorReset"]').click();assert.equal(await page.locator('#lookSelect').inputValue(),'');
  await page.locator('[data-tab="text"]').click();await page.locator('[data-action="addText"]').click();
  await page.locator('input[data-field="background"]').check();

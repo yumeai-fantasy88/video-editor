@@ -20,3 +20,9 @@ test('matching gains remain bounded and ignore clipped samples',()=>{
 test('all supplied looks survive project save and validation',()=>{
  for(const setting of Object.values(looks)){const p=newProject();p.look={...gradeDefault(),...setting};assert.deepEqual(validateProject(JSON.parse(JSON.stringify(p))),p);}
 });
+
+
+test('dream variants retain highlight headroom and new controls migrate as neutral',()=>{
+ const p=newProject();delete p.look.softness;delete p.look.shadowWarmth;validateProject(p);assert.equal(p.look.softness,0);assert.equal(p.look.shadowWarmth,0);
+ for(const name of ['Dreamcore','Dreamcore Warm','Dreamcore Blue']){p.look={...gradeDefault(),...looks[name]};assert.equal(p.look.bleed<=.06,true);assert.ok(p.look.bloom<=.22);assert.ok(p.look.highlights<0);assert.deepEqual(validateProject(JSON.parse(JSON.stringify(p))),p);}
+});
