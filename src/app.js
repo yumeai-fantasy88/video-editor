@@ -29,6 +29,25 @@ function timeline(){const placed=layout(p),max=Math.max(total(p)+2,8),width=Math
 const range=(key,label,value,min,max,step=.01)=>`<div class="control"><div class="control-head"><label for="${key}-slider">${label}</label><input type="number" data-key="${key}" aria-label="${label} 数値" value="${Number(value).toFixed(step>=1?0:step===.001?3:2)}" min="${min}" max="${max}" step="${step}"></div><input id="${key}-slider" type="range" data-key="${key}" aria-label="${label}" value="${value}" min="${min}" max="${max}" step="${step}"></div>`;
 const number=(key,label,value,min=0,max=86400,step=.001)=>`<div class="control"><div class="control-head"><label>${label}</label><input type="number" aria-label="${label}" data-key="${key}" value="${Number(value).toFixed(3)}" min="${min}" max="${max}" step="${step}"></div></div>`;
 const btn=(action,label,cls='')=>`<button data-action="${action}" class="${cls}">${label}</button>`;
+function presetName(grade,name,choices){
+  const same=value=>Object.entries({...gradeDefault(),...value}).every(([k,v])=>Math.abs((grade[k]??gradeDefault()[k])-v)<1e-8);
+  if(Object.hasOwn(choices,name))return {name,modified:!same(choices[name])};
+  return {name:Object.keys(choices).find(k=>same(choices[k]))||'',modified:false};
+}
+function syncColorControls(){
+  const c=current();if(!c||tab!=='color')return;
+  for(const el of $('#panel').querySelectorAll('[data-key],[data-color-toggle]')){
+    const path=el.dataset.key||el.dataset.colorToggle;if(!/^[gl]\./.test(path))continue;
+    const value=(path.startsWith('g.')?c.grade:p.look)?.[path.slice(2)];
+    if(el.dataset.colorToggle)el.checked=!!value;else el.value=el.type==='number'?Number(value).toFixed(2):value;
+  }
+  for(const [id,grade,name,choices] of [['lookSelect',p.look,p.lookPreset,looks],['presetSelect',c.grade,c.gradePreset,presets]]){
+    const select=$('#'+id);if(!select)continue;
+    const state=presetName(grade,name,choices);
+    for(const option of select.options)if(option.value){const value=option.value;option.value=value;option.textContent=value+(value===state.name&&state.modified?'（調整済み）':'');}
+    select.value=state.name;
+  }
+}
 const panelSectionState=new Map();
 function panel(){
   for(const section of $('#panel').querySelectorAll('details[data-panel-section]'))panelSectionState.set(section.dataset.panelSection,section.open);
@@ -77,12 +96,13 @@ function panel(){
       html+='<details open data-panel-section="matching"><summary>3 · クリップ同士を揃える</summary><label>基準クリップ<select id="referenceClip"><option value="">選択してください</option>'+p.clips.filter(x=>x.id!==c.id).map(x=>'<option value="'+x.id+'" '+(p.referenceClip===x.id?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></label><div class="button-grid">'+btn('referenceView','基準と並べて比較')+btn('matchColor','色合わせを補助')+'</div>'+range('g.matchStrength','色合わせの適用強度',g.matchStrength,0,1)+'<div id="referenceResult"></div><p class="sub">各クリップの中央フレームの平均色・明るさを比較します。構図が異なる場合は強度を下げて調整してください。</p></details>';
       html+='<details data-panel-section="clip-look"><summary>4 · クリップのルック</summary>'+toggle('g.lookOn','クリップルック ON',g.lookOn)+controls('g.',g,[['density','デンシティー',-1,2],['depth','中間色・暗部へ集中',0,1],['protect','ハイライト保護',0,1],['curveLow','カーブ：暗部（25%）',-.2,.2],['curveMid','カーブ：中間（50%）',-.2,.2],['curveHigh','カーブ：明部（75%）',-.2,.2],['fade','退色',0,.5]]);
       for(const [k,label] of [['red','赤'],['yellow','黄'],['green','緑'],['cyan','シアン'],['blue','青'],['magenta','マゼンタ']])html+=range('g.'+k,label+' デンシティー',g[k],-1,1)+range('g.sat'+k[0].toUpperCase()+k.slice(1),label+' 彩度調整',g['sat'+k[0].toUpperCase()+k.slice(1)],-1,1);
-      html+='</details><details data-panel-section="clip-texture"><summary>クリップの質感</summary>'+toggle('g.textureOn','クリップ質感 ON',g.textureOn)+controls('g.',g,[['grain','粒子',0,1],['bleed','色のにじみ',0,1],['scanlines','走査線',0,1]])+'</details>';
-      html+='<details open data-panel-section="global-look"><summary>作品全体のルック・質感</summary><p class="sub">すべての映像に適用。字幕にはかかりません。</p><label>作品プリセット<select id="lookSelect"><option value="">選択してください</option>'+Object.keys(looks).map(k=>'<option>'+k+'</option>').join('')+'</select></label>'+toggle('l.lookOn','全体ルック ON',look.lookOn)+controls('l.',look,[...tone,['density','全体デンシティー',-1,2],['curveLow','カーブ：暗部',-.2,.2],['curveMid','カーブ：中間',-.2,.2],['curveHigh','カーブ：明部',-.2,.2],['fade','退色',0,.5]])+toggle('l.textureOn','全体質感 ON',look.textureOn)+controls('l.',look,[['grain','粒子',0,1],['bleed','色のにじみ',0,1],['scanlines','走査線',0,1]])+btn('lookReset','全体ルック・質感をリセット','wide')+'</details>';
+      html+='</details><details data-panel-section="clip-texture"><summary>クリップの質感</summary>'+toggle('g.textureOn','クリップ質感 ON',g.textureOn)+controls('g.',g,[['grain','粒子',0,1],['bleed','色のにじみ（横方向）',0,1],['scanlines','走査線（横縞）',0,1]])+'</details>';
+      html+='<details open data-panel-section="global-look"><summary>作品全体のルック・質感</summary><p class="sub">すべての映像に適用。字幕にはかかりません。</p><label>作品プリセット<select id="lookSelect"><option value="">選択してください</option>'+Object.keys(looks).map(k=>'<option>'+k+'</option>').join('')+'</select></label>'+toggle('l.lookOn','全体ルック ON',look.lookOn)+controls('l.',look,[...tone,['density','全体デンシティー',-1,2],['curveLow','カーブ：暗部',-.2,.2],['curveMid','カーブ：中間',-.2,.2],['curveHigh','カーブ：明部',-.2,.2],['fade','退色',0,.5]])+toggle('l.textureOn','全体質感 ON',look.textureOn)+controls('l.',look,[['grain','粒子',0,1],['bleed','色のにじみ（横方向）',0,1],['scanlines','走査線（横縞）',0,1]])+'<p class="sub">色のにじみ：輪郭の色が横に広がります。走査線：画面に横縞を重ねます。0で効果なし、1で最大です。</p>'+btn('lookReset','全体ルック・質感をリセット','wide')+'</details>';
       html+='<div class="button-grid">'+btn('gradeAll','クリップ設定を全クリップに適用')+btn('gradeReset','選択クリップをリセット')+btn('presetSave','クリップ設定を保存')+btn('presetExport','クリップ設定をダウンロード')+'</div><label>保存済みクリップ設定<select id="presetSelect"><option value="">選択してください</option>'+Object.keys(presets).map(k=>'<option>'+esc(k)+'</option>').join('')+'</select></label>';
     }
   }
   $('#panel').innerHTML=html;
+  syncColorControls();
   for(const section of $('#panel').querySelectorAll('details[data-panel-section]')){
     if(panelSectionState.has(section.dataset.panelSection))section.open=panelSectionState.get(section.dataset.panelSection);
   }
@@ -105,7 +125,7 @@ $('#panel').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if
   if(action==='presetSave'){const name=prompt('プリセット名');if(name){presets[name]=structuredClone(c.grade);try{localStorage.setItem('density-presets',JSON.stringify(presets));}catch{status('保存容量が不足しています。設定をダウンロードしてください');}panel();}return;}
   if(action==='referenceView'||action==='matchColor'){await compareClips(action==='matchColor');return;}
   checkpoint();
-  if(action==='lookReset')p.look=gradeDefault();
+  if(action==='lookReset'){p.look=gradeDefault();delete p.lookPreset;}
   if(action==='fill'||action==='fit'){c.fit=action==='fill'?'cover':'contain';c.zoom=1;c.offsetX=0;c.offsetY=0;}
   if(action==='positionReset'){c.offsetX=0;c.offsetY=0;}
   if(action==='addText'){const t={id:id(),text:'テキスト',...textPlacement(p,time),font:'sans-serif',size:5,x:50,y:85,stroke:3,color:'#ffffff',outline:'#000000',bold:false,background:false};p.texts.push(t);selected=t.id;time=t.start;}
@@ -115,7 +135,7 @@ $('#panel').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if
   if(action==='duplicate'){const copy=structuredClone(c);copy.id=id();p.clips.splice(p.clips.indexOf(c)+1,0,copy);selected=copy.id;}
   if(action==='split'&&!splitClip(p,c.id,time))status('クリップの内側へ再生位置を動かしてください。クロスフェード付近は先にクロスフェードを短くしてください。');
   if(action==='detach'){const a=assets.get(c.asset);if(!a?.audio)status('このクリップには分離できる音声がありません');else{const copy=structuredClone(c);copy.id=id();copy.start=layout(p).find(x=>x.id===c.id).start;copy.name+=' · 音声';p.audio.push(copy);c.volume=0;selected=copy.id;tab='audio';}}
-  if(action==='gradeReset')c.grade=gradeDefault();
+  if(action==='gradeReset'){c.grade=gradeDefault();delete c.gradePreset;}
   if(action==='gradeAll')p.clips.forEach(x=>x.grade=structuredClone(c.grade));
   updateTabs();refresh();
 };
@@ -124,9 +144,9 @@ $('#panel').addEventListener('focusin',()=>gestureKey=null);
 $('#panel').addEventListener('pointerdown',()=>gestureKey=null);
 function editControl(e){const el=e.target,c=current();if(!c)return;if(e.type==='input'&&(el.tagName==='SELECT'||el.type==='checkbox'))return;
   if(el.id==='referenceClip'){checkpoint();p.referenceClip=el.value;return;}
-  if(el.id==='lookSelect'){if(looks[el.value]){checkpoint();p.look={...gradeDefault(),...looks[el.value]};refresh();}return;}
-  if(el.dataset.colorToggle){checkpoint();const [scope,key]=el.dataset.colorToggle.split('.');(scope==='g'?c.grade:p.look)[key]=el.checked?1:0;refresh(false);return;}
-  if(el.id==='presetSelect'){if(el.value){checkpoint();c.grade={...gradeDefault(),...structuredClone(presets[el.value])};refresh();}return;}
+  if(el.id==='lookSelect'){if(looks[el.value]){checkpoint();p.lookPreset=el.value;p.look={...gradeDefault(),...looks[el.value]};syncColorControls();refresh(false);}return;}
+  if(el.dataset.colorToggle){checkpoint();const [scope,key]=el.dataset.colorToggle.split('.');(scope==='g'?c.grade:p.look)[key]=el.checked?1:0;syncColorControls();refresh(false);return;}
+  if(el.id==='presetSelect'){if(el.value){checkpoint();c.gradePreset=el.value;c.grade={...gradeDefault(),...structuredClone(presets[el.value])};syncColorControls();refresh(false);}return;}
   const key=el.dataset.key,field=el.dataset.field;if(!key&&!field)return;
   if(gestureKey!==(key||field)){checkpoint();gestureKey=key||field;}
   if(field)c[field]=el.type==='checkbox'?el.checked:el.value;
@@ -143,7 +163,7 @@ function editControl(e){const el=e.target,c=current();if(!c)return;if(e.type==='
   refresh(false);
 }
 $('#panel').addEventListener('input',editControl);
-$('#panel').addEventListener('change',e=>{if(e.target.tagName==='SELECT'||e.target.type==='checkbox')editControl(e);if(e.target.dataset.key){gestureKey=null;panel();}});
+$('#panel').addEventListener('change',e=>{if(e.target.tagName==='SELECT'||e.target.type==='checkbox')editControl(e);if(e.target.dataset.key){gestureKey=null;if(/^[gl]\./.test(e.target.dataset.key))syncColorControls();else panel();}});
 function stop(){const session=previewAudioSession;previewAudioSession=null;void session?.close();playing=false;playingToken++;$('#play').textContent='▶';$('#play').setAttribute('aria-label','再生');for(const s of scheduled)try{s.stop();}catch{}scheduled=[];}
 async function play(){if(playing){stop();return;}if(!p.clips.length||busy)return;audioContext??=new AudioContext();await audioContext.resume();if(time>=total(p)-1/p.fps)time=0;playing=true;const token=++playingToken;$('#play').textContent='Ⅱ';$('#play').setAttribute('aria-label','一時停止');const base=time,session=new AudioReadSession();previewAudioSession=session;let startAt;
   try{const first=await mixAudio(p,base,Math.min(1,total(p)-base),48000,session);if(token!==playingToken)return;startAt=audioContext.currentTime+.08;

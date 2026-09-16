@@ -51,9 +51,19 @@ float mask=chroma*(1.-protect*smoothstep(.55,1.,l))*(1.-depth*smoothstep(.25,.85
 c*=exp2(-d*mask*1.5);c=mix(c,vec3(.18),fade);
 }
 if(textureOn>.5){
- if(bleed>.0001){vec3 right=texture2D(tex,uv+vec2(3.*pixelX,0.)).rgb,left=texture2D(tex,uv-vec2(3.*pixelX,0.)).rgb;c+=bleed*.4*(vec3(right.r,0.,left.b)-vec3(src.r,0.,src.b));}
+ // Normalized distances keep the same effect at preview and export resolutions.
+ if(bleed>.0001){
+  float radius=.02*bleed;
+  vec3 spread=src.rgb*.2;
+  spread+=texture2D(tex,uv+vec2(radius*.5,0.)).rgb*.25;
+  spread+=texture2D(tex,uv-vec2(radius*.5,0.)).rgb*.25;
+  spread+=texture2D(tex,uv+vec2(radius,0.)).rgb*.15;
+  spread+=texture2D(tex,uv-vec2(radius,0.)).rgb*.15;
+  c+=bleed*((spread-vec3(lum(spread)))-(src.rgb-vec3(lum(src.rgb))));
+ }
  c+= (random(floor(uv/vec2(pixelX,pixelY))+vec2(clock*17.,clock*29.))-.5)*grain*.12;
- c*=1.-scanlines*.28*(.5+.5*cos(uv.y/pixelY*3.14159265));
+ // 72 horizontal bands remain visible after the mobile preview is scaled down.
+ c*=1.-scanlines*.8*smoothstep(.2,.8,.5+.5*cos(uv.y*72.*6.2831853));
 }
 gl_FragColor=vec4(clamp(c,0.,1.),src.a);}`;
 export class Grader {
@@ -67,3 +77,4 @@ export class Grader {
   dispose(){this.gl.getExtension('WEBGL_lose_context')?.loseContext();}
   render(source,grade,time=0){const gl=this.gl;const w=source.width,h=source.height;if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}gl.viewport(0,0,w,h);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,source);for(const [k,v] of Object.entries({...gradeDefault(),...grade,pixelX:1/w,pixelY:1/h,clock:Math.floor(time*24)})){this.uniforms[k]??=gl.getUniformLocation(this.program,k);gl.uniform1f(this.uniforms[k],v);}gl.drawArrays(gl.TRIANGLE_STRIP,0,4);return this.canvas;}
 }
+

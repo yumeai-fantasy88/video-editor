@@ -5,7 +5,7 @@ import {readFile,mkdir,rm} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import assert from 'node:assert/strict';
 await mkdir('.browser-test',{recursive:true});
-await build({stdin:{contents:"export * from '../src/engine.js';export * from '../src/model.js';export * from '../src/grade.js';export {Input,BufferSource,ALL_FORMATS,EncodedPacketSink,Output,BufferTarget,Mp4OutputFormat,AudioBufferSource,AudioBufferSink,Quality} from 'mediabunny';export {registerAacEncoder} from '@mediabunny/aac-encoder';",resolveDir:resolve('tests')},bundle:true,format:'esm',outfile:'.browser-test/entry.js'});
+await build({stdin:{contents:"export * from '../src/engine.js';export * from '../src/model.js';export * from '../src/grade.js';export {Input,BufferSource,ALL_FORMATS,CanvasSink,EncodedPacketSink,Output,BufferTarget,Mp4OutputFormat,AudioBufferSource,AudioBufferSink,Quality} from 'mediabunny';export {registerAacEncoder} from '@mediabunny/aac-encoder';",resolveDir:resolve('tests')},bundle:true,format:'esm',outfile:'.browser-test/entry.js'});
 const root=resolve('.');
 const server=createServer(async(req,res)=>{try{const path=resolve(root,'.'+new URL(req.url,'http://localhost').pathname);if(!path.startsWith(root+'/'))throw Error();const body=await readFile(path);res.setHeader('Content-Type',({'.js':'text/javascript','.html':'text/html','.css':'text/css'})[extname(path)]||'application/octet-stream');res.end(body);}catch{res.statusCode=404;res.end();}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -24,6 +24,35 @@ try{
   const luma=read({...gradeDefault(),noiseOn:1,denoiseLuma:1});
   ctx.fillStyle='rgb(120,120,120)';ctx.fillRect(0,0,32,32);ctx.fillStyle='rgb(150,110,120)';ctx.fillRect(16,16,1,1);
   const chroma=read({...gradeDefault(),noiseOn:1,denoiseChroma:1});
+  // Compare texture at preview and 1080p resolutions, after phone-size scaling.
+  const textureSource=document.createElement('canvas');
+  const thumb=document.createElement('canvas');thumb.width=320;thumb.height=180;
+  const tc=thumb.getContext('2d',{willReadFrequently:true});
+  function textureFrame(width,grade,edge=false){
+   textureSource.width=width;textureSource.height=width*9/16;
+   const ctx=textureSource.getContext('2d');ctx.fillStyle=edge?'rgb(200,40,40)':'rgb(160,160,160)';ctx.fillRect(0,0,width,textureSource.height);
+   if(edge){ctx.fillStyle='rgb(40,120,200)';ctx.fillRect(width/2,0,width/2,textureSource.height);}
+   tc.drawImage(grader.render(textureSource,{...gradeDefault(),...grade}),0,0,320,180);
+   return tc.getImageData(0,0,320,180).data;
+  }
+  const scanPreview=textureFrame(960,{scanlines:1}),scanExport=textureFrame(1920,{scanlines:1});
+  const rowRange=data=>{const rows=Array.from({length:180},(_,y)=>data[(y*320+80)*4]);return Math.max(...rows)-Math.min(...rows);};
+  const neutralEdge=textureFrame(960,{},true),bleedEdge=textureFrame(960,{bleed:1},true);
+  let bleedDifference=0,scanDifference=0;
+  for(let y=0;y<180;y++)scanDifference+=Math.abs(scanPreview[(y*320+80)*4]-scanExport[(y*320+80)*4])/180;
+  for(let x=152;x<168;x++)bleedDifference=Math.max(bleedDifference,Math.abs(neutralEdge[(80*320+x)*4]-bleedEdge[(80*320+x)*4]));
+  const grayBleed=textureFrame(960,{bleed:1});
+  const textureStats={scanPreview:rowRange(scanPreview),scanExport:rowRange(scanExport),scanDifference,bleedDifference,gray:grayBleed[0]};
+  // Verify the actual H.264 file retains the horizontal texture at 1080p.
+  textureFrame(1920,{});
+  const textureAsset={id:'texture-image',name:'texture',kind:'image',duration:1,image:textureSource};M.assets.set(textureAsset.id,textureAsset);
+  const textureProject=M.newProject();textureProject.clips=[M.clip(textureAsset)];textureProject.clips[0].out=.125;textureProject.clips[0].grade.scanlines=1;
+  const textureBlob=await M.exportVideo(textureProject,{long:1920,mbps:8,start:0,length:.125,signal:new AbortController().signal});
+  const textureInput=new M.Input({source:new M.BufferSource(await textureBlob.arrayBuffer()),formats:M.ALL_FORMATS});
+  const textureTrack=await textureInput.getPrimaryVideoTrack();
+  const textureDecoded=await new M.CanvasSink(textureTrack).getCanvas(0);
+  tc.drawImage(textureDecoded.canvas,0,0,320,180);textureStats.decodedScan=rowRange(tc.getImageData(0,0,320,180).data);textureStats.exportWidth=textureDecoded.canvas.width;
+  textureInput.dispose();
   const a={id:'browser-image',name:'sample',kind:'image',duration:5,image:canvas};M.assets.set(a.id,a);
   const p=M.newProject();p.clips=[M.clip(a)];p.clips[0].out=5;
   // Public synthetic AAC fixture; no user uploads are used by CI.
@@ -47,8 +76,11 @@ try{
    const at=await input.getPrimaryAudioTrack();
    exports.push({fps,audioCodec:at?.codec,codec:track.codec,packets,first,last,duration:await input.computeDuration()});input.dispose();
   }
-  return {neutral,bypass,changed,luma,chroma,maxAudioError,exports};
+  return {neutral,bypass,changed,luma,chroma,maxAudioError,exports,textureStats};
  });
+ assert.ok(result.textureStats.scanPreview>50);assert.ok(result.textureStats.scanExport>50);
+ assert.ok(result.textureStats.scanDifference<20);assert.ok(result.textureStats.bleedDifference>30);
+ assert.ok(Math.abs(result.textureStats.gray-160)<=1);assert.equal(result.textureStats.exportWidth,1920);assert.ok(result.textureStats.decodedScan>50);
  assert.ok(result.luma[0]<128);assert.ok(result.chroma[0]-result.chroma[1]<25);
  assert.deepEqual(result.neutral,result.bypass);assert.ok(Math.abs(result.neutral[0]-90)<=2);assert.ok(result.changed[0]>result.neutral[0]+30);
  assert.ok(result.maxAudioError<1e-5, 'AAC decoder continuity: '+result.maxAudioError);
@@ -65,10 +97,22 @@ try{
    await page.locator('input[type="range"][data-key="'+key+'"]').evaluate(el=>{el.value='.3';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});
    assert.equal(await look.evaluate(el=>el.open),true);assert.equal(await texture.evaluate(el=>el.open),true);assert.equal(await page.locator('[data-panel-section="noise"]').evaluate(el=>el.open),false);
  }
+ await page.evaluate(()=>{window.originalLookSelect=document.querySelector('#lookSelect');window.originalTexture=document.querySelector('[data-panel-section="clip-texture"]');});
  await page.locator('#lookSelect').selectOption('Cinema Soft');
+ assert.equal(await page.locator('#lookSelect').inputValue(),'Cinema Soft');
+ assert.equal(await page.evaluate(()=>document.querySelector('#lookSelect')===window.originalLookSelect),true);
+ assert.equal(await page.locator('[data-panel-section="global-look"]').evaluate(el=>el.open),true);
+ await page.locator('input[type="range"][data-key="l.contrast"]').evaluate(el=>{el.value='1.2';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});
+ assert.equal(await page.locator('#lookSelect').inputValue(),'Cinema Soft');
+ assert.equal(await page.locator('#lookSelect option:checked').textContent(),'Cinema Soft（調整済み）');
+ assert.equal(await page.evaluate(()=>document.querySelector('[data-panel-section="clip-texture"]')===window.originalTexture),true);
+ await page.locator('#undo').click();assert.equal(await page.locator('#lookSelect option:checked').textContent(),'Cinema Soft');
+ await page.locator('#redo').click();assert.equal(await page.locator('#lookSelect option:checked').textContent(),'Cinema Soft（調整済み）');
  assert.equal(await texture.evaluate(el=>el.open),true);
  await page.locator('[data-tab="edit"]').click();await page.locator('[data-tab="color"]').click();
  assert.equal(await look.evaluate(el=>el.open),true);assert.equal(await texture.evaluate(el=>el.open),true);
+ assert.equal(await page.locator('#lookSelect').inputValue(),'Cinema Soft');
+ await page.locator('[data-action="lookReset"]').click();assert.equal(await page.locator('#lookSelect').inputValue(),'');
  // Exercise the iPhone-style full-window fallback with the original rendered canvas.
  await page.evaluate(()=>{window.originalPreview=document.querySelector('#preview');document.documentElement.requestFullscreen=()=>Promise.reject(new Error('unsupported'));});
  await page.locator('#fullscreenOpen').click();
