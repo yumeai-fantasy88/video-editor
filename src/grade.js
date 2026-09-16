@@ -53,7 +53,7 @@ c*=exp2(-d*mask*1.5);c=mix(c,vec3(.18),fade);
 if(textureOn>.5){
  // Four-tap highlight diffusion: intentionally small enough for mobile preview/export.
  if(bloom>.0001){
-  vec2 radius=vec2(.012,.012*pixelY/pixelX);
+  vec2 radius=vec2(.02,.02*pixelY/pixelX);
   vec3 glow=vec3(0.);
   glow+=texture2D(tex,uv+vec2(radius.x,0.)).rgb;
   glow+=texture2D(tex,uv-vec2(radius.x,0.)).rgb;
