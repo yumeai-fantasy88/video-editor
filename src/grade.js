@@ -6,7 +6,7 @@ varying vec2 uv; uniform sampler2D tex;
 uniform float density,depth,protect,exposure,contrast,saturation,temperature,tint,shadows,highlights,fade;
 uniform float red,yellow,green,cyan,blue,magenta;
 uniform float denoiseLuma,denoiseChroma,noiseOn,correctionOn,lookOn,textureOn,pivot,black,white;
-uniform float curveLow,curveMid,curveHigh,grain,bleed,scanlines;
+uniform float curveLow,curveMid,curveHigh,grain,bloom,bleed,scanlines;
 uniform float matchR,matchG,matchB,matchStrength;
 uniform float satRed,satYellow,satGreen,satCyan,satBlue,satMagenta;
 uniform float pixelX,pixelY,clock;
@@ -51,6 +51,17 @@ float mask=chroma*(1.-protect*smoothstep(.55,1.,l))*(1.-depth*smoothstep(.25,.85
 c*=exp2(-d*mask*1.5);c=mix(c,vec3(.18),fade);
 }
 if(textureOn>.5){
+ // Four-tap highlight diffusion: intentionally small enough for mobile preview/export.
+ if(bloom>.0001){
+  vec2 radius=vec2(.012,.012*pixelY/pixelX);
+  vec3 glow=vec3(0.);
+  glow+=texture2D(tex,uv+vec2(radius.x,0.)).rgb;
+  glow+=texture2D(tex,uv-vec2(radius.x,0.)).rgb;
+  glow+=texture2D(tex,uv+vec2(0.,radius.y)).rgb;
+  glow+=texture2D(tex,uv-vec2(0.,radius.y)).rgb;
+  glow*=.25;float bright=smoothstep(.42,.85,lum(glow));
+  c+=glow*bright*bloom*.48;
+ }
  // Normalized distances keep the same effect at preview and export resolutions.
  if(bleed>.0001){
   float radius=.02*bleed;

@@ -41,8 +41,9 @@ try{
   let bleedDifference=0,scanDifference=0;
   for(let y=0;y<180;y++)scanDifference+=Math.abs(scanPreview[(y*320+80)*4]-scanExport[(y*320+80)*4])/180;
   for(let x=152;x<168;x++)bleedDifference=Math.max(bleedDifference,Math.abs(neutralEdge[(80*320+x)*4]-bleedEdge[(80*320+x)*4]));
+  const bloomSource=document.createElement('canvas');bloomSource.width=960;bloomSource.height=540;const bc=bloomSource.getContext('2d');bc.fillStyle='rgb(20,20,30)';bc.fillRect(0,0,960,540);bc.fillStyle='white';bc.fillRect(450,250,60,40);textureSource.width=960;textureSource.height=540;textureSource.getContext('2d').drawImage(bloomSource,0,0);tc.drawImage(grader.render(textureSource,{...gradeDefault(),bloom:1}),0,0,320,180);const bloomEdge=[...tc.getImageData(145,90,1,1).data];
   const grayBleed=textureFrame(960,{bleed:1});
-  const textureStats={scanPreview:rowRange(scanPreview),scanExport:rowRange(scanExport),scanDifference,bleedDifference,gray:grayBleed[0]};
+  const textureStats={scanPreview:rowRange(scanPreview),scanExport:rowRange(scanExport),scanDifference,bleedDifference,bloomEdge,gray:grayBleed[0]};
   // Verify the actual H.264 file retains the horizontal texture at 1080p.
   textureFrame(1920,{});
   const textureAsset={id:'texture-image',name:'texture',kind:'image',duration:1,image:textureSource};M.assets.set(textureAsset.id,textureAsset);
@@ -81,7 +82,7 @@ try{
  });
  assert.ok(result.textureStats.textBackground[0]>220&&result.textureStats.textBackground[1]<25);
  assert.ok(result.textureStats.scanPreview>50);assert.ok(result.textureStats.scanExport>50);
- assert.ok(result.textureStats.scanDifference<20);assert.ok(result.textureStats.bleedDifference>30);
+ assert.ok(result.textureStats.scanDifference<20);assert.ok(result.textureStats.bleedDifference>30);assert.ok(result.textureStats.bloomEdge[0]>20);
  assert.ok(Math.abs(result.textureStats.gray-160)<=1);assert.equal(result.textureStats.exportWidth,1920);assert.ok(result.textureStats.decodedScan>50);
  assert.ok(result.luma[0]<128);assert.ok(result.chroma[0]-result.chroma[1]<25);
  assert.deepEqual(result.neutral,result.bypass);assert.ok(Math.abs(result.neutral[0]-90)<=2);assert.ok(result.changed[0]>result.neutral[0]+30);
@@ -100,6 +101,7 @@ try{
    assert.equal(await look.evaluate(el=>el.open),true);assert.equal(await texture.evaluate(el=>el.open),true);assert.equal(await page.locator('[data-panel-section="noise"]').evaluate(el=>el.open),false);
  }
  await page.evaluate(()=>{window.originalLookSelect=document.querySelector('#lookSelect');window.originalTexture=document.querySelector('[data-panel-section="clip-texture"]');});
+ assert.equal((await page.locator('#lookSelect option').allTextContents()).includes('Faded Film'),false);
  await page.locator('#lookSelect').selectOption('Cinema Soft');
  assert.equal(await page.locator('#lookSelect').inputValue(),'Cinema Soft');
  assert.equal(await page.evaluate(()=>document.querySelector('#lookSelect')===window.originalLookSelect),true);
@@ -121,8 +123,8 @@ try{
  assert.equal(await page.locator('input[type="range"][data-key="g.grain"]').inputValue(),'0.3');
  await page.locator('[data-action="clipTextureReset"]').click();
  assert.equal(await page.locator('input[type="range"][data-key="g.grain"]').inputValue(),'0');
- await page.locator('#lookSelect').selectOption('Faded Film');
- assert.ok((await page.locator('#lookDescription').textContent()).includes('白っぽい'));
+ await page.locator('#lookSelect').selectOption('Dreamcore');
+ assert.ok((await page.locator('#lookDescription').textContent()).includes('夢の中'));
  await page.locator('[data-action="allColorReset"]').click();assert.equal(await page.locator('#lookSelect').inputValue(),'');
  await page.locator('[data-tab="text"]').click();await page.locator('[data-action="addText"]').click();
  await page.locator('input[data-field="background"]').check();

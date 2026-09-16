@@ -8,7 +8,7 @@ export function duplicateText(p,textId){
   const copy={...structuredClone(p.texts[index]),id:id()};p.texts.splice(index+1,0,copy);return copy;
 }
 export function resetClipColor(c,scope='all'){
-  const textureKeys=['grain','bleed','scanlines','textureOn'],defaults=gradeDefault();
+  const textureKeys=['grain','bloom','bleed','scanlines','textureOn'],defaults=gradeDefault();
   c.grade={...defaults,...c.grade};
   for(const key of Object.keys(defaults))if(scope==='all'||(scope==='texture'?textureKeys.includes(key):!textureKeys.includes(key)))c.grade[key]=defaults[key];
   delete c.gradePreset;
