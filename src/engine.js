@@ -57,7 +57,7 @@ export class Renderer {
     for(const t of p.texts.filter(t=>time>=t.start&&time<t.end)){
       ctx.save();const size=h*t.size/100;ctx.font=`${t.bold?'700':'400'} ${size}px ${t.font}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineJoin='round';
       const lines=t.text.split('\n'),x=w*t.x/100,y=h*t.y/100;
-      if(t.background){const width=Math.max(...lines.map(l=>ctx.measureText(l).width));ctx.fillStyle='rgba(0,0,0,.65)';ctx.fillRect(x-width/2-size*.3,y-size*lines.length*.65,width+size*.6,size*lines.length*1.3);}
+      if(t.background){const width=Math.max(...lines.map(l=>ctx.measureText(l).width));ctx.save();ctx.globalAlpha=t.backgroundOpacity??.65;ctx.fillStyle=t.backgroundColor||'#000000';ctx.fillRect(x-width/2-size*.3,y-size*lines.length*.65,width+size*.6,size*lines.length*1.3);ctx.restore();}
       ctx.strokeStyle=t.outline||'#000000';ctx.lineWidth=t.stroke*h/1080;ctx.fillStyle=t.color||'#ffffff';
       lines.forEach((line,i)=>{const yy=y+(i-(lines.length-1)/2)*size*1.3;if(t.stroke)ctx.strokeText(line,x,yy);ctx.fillText(line,x,yy);});ctx.restore();
     }

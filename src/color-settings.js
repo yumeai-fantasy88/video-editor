@@ -24,3 +24,12 @@ export function imageMean(data){
  if(!weight)throw Error('色合わせに使える中間色がありません');
  return sum.map(v=>v/weight);
 }
+
+
+export const lookDescriptions={
+ 'Cinema Soft':'穏やかなコントラストと控えめな彩度。色の深みを残す仕上がり。',
+ 'Faded Film':'彩度を抑え、黒を少し浮かせた退色感。Cinema Softより白っぽい仕上がり。',
+ 'Cool Night':'青寄りの色温度と少し暗めの露出。夜の雰囲気。',
+ 'Y2K Clean':'コントラストと彩度を上げた、明快な色づかい。',
+ 'CRT/VHS':'色のにじみ、走査線、粒子を組み合わせたビデオ風。'
+};

@@ -1,5 +1,6 @@
+import {duplicateText,resetClipColor,resetAllColor} from './model.js';
 import {initFullscreenPreview} from './fullscreen-preview.js';
-import {looks,matchGains,imageMean} from './color-settings.js';
+import {lookDescriptions,looks,matchGains,imageMean} from './color-settings.js';
 import {newProject,id,clip,layout,total,duration,frameDuration,splitClip,gradeDefault,parseSrt,validateProject,clamp} from './model.js';
 import {assets,loadAsset,assetMeta,Renderer,dimensions,mixAudio,exportVideo,AudioReadSession} from './engine.js';
 import {extraFonts} from './fonts.js';
@@ -46,6 +47,7 @@ function syncColorControls(){
     const state=presetName(grade,name,choices);
     for(const option of select.options)if(option.value){const value=option.value;option.value=value;option.textContent=value+(value===state.name&&state.modified?'（調整済み）':'');}
     select.value=state.name;
+    if(id==='lookSelect'&&$('#lookDescription'))$('#lookDescription').textContent=lookDescriptions[state.name]||'プリセットは作品全体に適用されます。';
   }
 }
 const panelSectionState=new Map();
@@ -75,7 +77,7 @@ function panel(){
     html='<h2>字幕とテキスト</h2><div class="button-grid">'+btn('addText','＋ テキスト')+btn('srt','SRTを読み込む')+'</div><div class="item-list">'+p.texts.map(x=>`<button data-select="${x.id}" class="${selected===x.id?'active':''}">${esc(x.text)}</button>`).join('')+'</div>';
     if(text){if(pictureEnd(p)&&c.end>pictureEnd(p))html+='<p class="notice">この字幕は映像の終了（'+pictureEnd(p).toFixed(3)+'秒）を越えています。映像がない区間は黒背景になります。</p>'+btn('fitText','字幕を映像の時間内に収める','wide');html+=`<h3>表示内容</h3><textarea data-field="text" aria-label="字幕テキスト">${esc(c.text)}</textarea><label>フォント<select data-field="font">${fonts.map((f,i)=>`<option value="${esc(f)}" ${c.font===f?'selected':''}>${esc(fontNames[i]||f)}</option>`).join('')}</select></label>`+btn('font','＋ フォントファイルを追加','wide');
       html+=number('start','表示開始（秒）',c.start)+number('end','表示終了（秒）',c.end)+range('size','文字サイズ（画面高％）',c.size,1,20,.1)+range('x','横位置（％）',c.x,0,100,1)+range('y','縦位置（％）',c.y,0,100,1)+range('stroke','縁取り（1080p基準px）',c.stroke,0,16,1);
-      html+=`<div class="button-grid"><label>文字色 <input type="color" data-field="color" value="${esc(c.color)}"></label><label>縁取り色 <input type="color" data-field="outline" value="${esc(c.outline)}"></label></div><label class="check"><input type="checkbox" data-field="bold" ${c.bold?'checked':''}>太字</label><label class="check"><input type="checkbox" data-field="background" ${c.background?'checked':''}>背景をつける</label>`+btn('delete','テキストを削除','wide danger');
+      html+=`<div class="button-grid"><label>文字色 <input type="color" data-field="color" value="${esc(c.color)}"></label><label>縁取り色 <input type="color" data-field="outline" value="${esc(c.outline)}"></label></div><label class="check"><input type="checkbox" data-field="bold" ${c.bold?'checked':''}>太字</label><label class="check"><input type="checkbox" data-field="background" ${c.background?'checked':''}>背景をつける</label>`+'<label>背景色 <input type="color" data-field="backgroundColor" value="'+esc(c.backgroundColor||'#000000')+'"></label>'+range('backgroundOpacity','背景の不透明度',c.backgroundOpacity??.65,0,1,.01)+btn('duplicateText','テキストを複製','wide')+'<p class="sub">複製は同じ時間・位置に重なります。複製後に位置や表示時間を変更できます。</p>'+btn('delete','テキストを削除','wide danger');
     }
   }
   if(tab==='effects'){
@@ -91,14 +93,14 @@ function panel(){
       const toggle=(key,label,v)=>'<label class="check"><input type="checkbox" data-color-toggle="'+key+'" '+(v?'checked':'')+'>'+label+'</label>';
       const controls=(prefix,obj,rows)=>rows.map(([k,l,min,max])=>range(prefix+k,l,obj[k],min,max)).join('');
       const tone=[['exposure','露出（EV）',-3,3],['contrast','コントラスト',0,2],['pivot','コントラスト・ピボット',.05,.95],['black','黒レベル',-.3,.3],['white','白レベル',.5,1.5],['shadows','シャドウ',-1,1],['highlights','ハイライト',-1,1],['temperature','色温度：寒色 ← → 暖色',-1,1],['tint','色かぶり：マゼンタ ← → 緑',-1,1],['saturation','彩度',0,2]];
-      html+='<p class="sub">'+esc(c.name)+'</p><details open data-panel-section="noise"><summary>1 · ノイズを抑える</summary>'+toggle('g.noiseOn','ノイズ除去を有効にする',g.noiseOn)+controls('g.',g,[['denoiseChroma','色ノイズ',0,1],['denoiseLuma','輝度ノイズ',0,1]])+'<p class="sub">初期値は両方0（処理なし）。輪郭を保つ軽量な空間処理です。</p></details>';
+      html+='<p class="sub">選択クリップ：'+esc(c.name)+'</p><div class="button-grid">'+btn('clipColorReset','このクリップの色調整をリセット')+btn('clipTextureReset','このクリップの質感をリセット')+'</div><p class="sub">色調整はノイズ除去・色合わせ・ルックを含みます。質感は粒子・にじみ・走査線です。</p><details open data-panel-section="noise"><summary>1 · ノイズを抑える</summary>'+toggle('g.noiseOn','ノイズ除去を有効にする',g.noiseOn)+controls('g.',g,[['denoiseChroma','色ノイズ',0,1],['denoiseLuma','輝度ノイズ',0,1]])+'<p class="sub">初期値は両方0（処理なし）。輪郭を保つ軽量な空間処理です。</p></details>';
       html+='<details open data-panel-section="correction"><summary>2 · クリップの色と明暗</summary>'+toggle('g.correctionOn','クリップ補正 ON',g.correctionOn)+controls('g.',g,tone)+'</details>';
       html+='<details open data-panel-section="matching"><summary>3 · クリップ同士を揃える</summary><label>基準クリップ<select id="referenceClip"><option value="">選択してください</option>'+p.clips.filter(x=>x.id!==c.id).map(x=>'<option value="'+x.id+'" '+(p.referenceClip===x.id?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></label><div class="button-grid">'+btn('referenceView','基準と並べて比較')+btn('matchColor','色合わせを補助')+'</div>'+range('g.matchStrength','色合わせの適用強度',g.matchStrength,0,1)+'<div id="referenceResult"></div><p class="sub">各クリップの中央フレームの平均色・明るさを比較します。構図が異なる場合は強度を下げて調整してください。</p></details>';
       html+='<details data-panel-section="clip-look"><summary>4 · クリップのルック</summary>'+toggle('g.lookOn','クリップルック ON',g.lookOn)+controls('g.',g,[['density','デンシティー',-1,2],['depth','中間色・暗部へ集中',0,1],['protect','ハイライト保護',0,1],['curveLow','カーブ：暗部（25%）',-.2,.2],['curveMid','カーブ：中間（50%）',-.2,.2],['curveHigh','カーブ：明部（75%）',-.2,.2],['fade','退色',0,.5]]);
       for(const [k,label] of [['red','赤'],['yellow','黄'],['green','緑'],['cyan','シアン'],['blue','青'],['magenta','マゼンタ']])html+=range('g.'+k,label+' デンシティー',g[k],-1,1)+range('g.sat'+k[0].toUpperCase()+k.slice(1),label+' 彩度調整',g['sat'+k[0].toUpperCase()+k.slice(1)],-1,1);
       html+='</details><details data-panel-section="clip-texture"><summary>クリップの質感</summary>'+toggle('g.textureOn','クリップ質感 ON',g.textureOn)+controls('g.',g,[['grain','粒子',0,1],['bleed','色のにじみ（横方向）',0,1],['scanlines','走査線（横縞）',0,1]])+'</details>';
-      html+='<details open data-panel-section="global-look"><summary>作品全体のルック・質感</summary><p class="sub">すべての映像に適用。字幕にはかかりません。</p><label>作品プリセット<select id="lookSelect"><option value="">選択してください</option>'+Object.keys(looks).map(k=>'<option>'+k+'</option>').join('')+'</select></label>'+toggle('l.lookOn','全体ルック ON',look.lookOn)+controls('l.',look,[...tone,['density','全体デンシティー',-1,2],['curveLow','カーブ：暗部',-.2,.2],['curveMid','カーブ：中間',-.2,.2],['curveHigh','カーブ：明部',-.2,.2],['fade','退色',0,.5]])+toggle('l.textureOn','全体質感 ON',look.textureOn)+controls('l.',look,[['grain','粒子',0,1],['bleed','色のにじみ（横方向）',0,1],['scanlines','走査線（横縞）',0,1]])+'<p class="sub">色のにじみ：輪郭の色が横に広がります。走査線：画面に横縞を重ねます。0で効果なし、1で最大です。</p>'+btn('lookReset','全体ルック・質感をリセット','wide')+'</details>';
-      html+='<div class="button-grid">'+btn('gradeAll','クリップ設定を全クリップに適用')+btn('gradeReset','選択クリップをリセット')+btn('presetSave','クリップ設定を保存')+btn('presetExport','クリップ設定をダウンロード')+'</div><label>保存済みクリップ設定<select id="presetSelect"><option value="">選択してください</option>'+Object.keys(presets).map(k=>'<option>'+esc(k)+'</option>').join('')+'</select></label>';
+      html+='<details open data-panel-section="global-look"><summary>作品全体のルック・質感</summary><p class="sub">すべての映像に適用。字幕にはかかりません。</p><label>作品プリセット<select id="lookSelect"><option value="">選択してください</option>'+Object.keys(looks).map(k=>'<option>'+k+'</option>').join('')+'</select></label><p class="sub" id="lookDescription"></p>'+toggle('l.lookOn','全体ルック ON',look.lookOn)+controls('l.',look,[...tone,['density','全体デンシティー',-1,2],['curveLow','カーブ：暗部',-.2,.2],['curveMid','カーブ：中間',-.2,.2],['curveHigh','カーブ：明部',-.2,.2],['fade','退色',0,.5]])+toggle('l.textureOn','全体質感 ON',look.textureOn)+controls('l.',look,[['grain','粒子',0,1],['bleed','色のにじみ（横方向）',0,1],['scanlines','走査線（横縞）',0,1]])+'<p class="sub">色のにじみ：輪郭の色が横に広がります。走査線：画面に横縞を重ねます。0で効果なし、1で最大です。</p>'+btn('lookReset','全体ルック・質感だけをリセット','wide')+'</details>';
+      html+='<div class="button-grid">'+btn('allColorReset','全クリップ＋全体の色・質感をリセット')+btn('gradeAll','クリップ設定を全クリップに適用')+btn('gradeReset','このクリップの色・質感をすべてリセット')+btn('presetSave','クリップ設定を保存')+btn('presetExport','クリップ設定をダウンロード')+'</div><label>保存済みクリップ設定<select id="presetSelect"><option value="">選択してください</option>'+Object.keys(presets).map(k=>'<option>'+esc(k)+'</option>').join('')+'</select></label>';
     }
   }
   $('#panel').innerHTML=html;
@@ -135,7 +137,11 @@ $('#panel').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if
   if(action==='duplicate'){const copy=structuredClone(c);copy.id=id();p.clips.splice(p.clips.indexOf(c)+1,0,copy);selected=copy.id;}
   if(action==='split'&&!splitClip(p,c.id,time))status('クリップの内側へ再生位置を動かしてください。クロスフェード付近は先にクロスフェードを短くしてください。');
   if(action==='detach'){const a=assets.get(c.asset);if(!a?.audio)status('このクリップには分離できる音声がありません');else{const copy=structuredClone(c);copy.id=id();copy.start=layout(p).find(x=>x.id===c.id).start;copy.name+=' · 音声';p.audio.push(copy);c.volume=0;selected=copy.id;tab='audio';}}
-  if(action==='gradeReset'){c.grade=gradeDefault();delete c.gradePreset;}
+  if(action==='gradeReset')resetClipColor(c);
+  if(action==='clipColorReset')resetClipColor(c,'color');
+  if(action==='clipTextureReset')resetClipColor(c,'texture');
+  if(action==='allColorReset'){resetAllColor(p);status('全クリップと全体の色・質感をリセットしました。編集・音声・字幕は維持しています');}
+  if(action==='duplicateText'){const copy=duplicateText(p,c.id);if(copy){selected=copy.id;time=copy.start;status('テキストを同じ時間・位置に複製しました');}}
   if(action==='gradeAll')p.clips.forEach(x=>x.grade=structuredClone(c.grade));
   updateTabs();refresh();
 };

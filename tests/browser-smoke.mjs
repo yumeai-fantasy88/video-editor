@@ -47,11 +47,12 @@ try{
   textureFrame(1920,{});
   const textureAsset={id:'texture-image',name:'texture',kind:'image',duration:1,image:textureSource};M.assets.set(textureAsset.id,textureAsset);
   const textureProject=M.newProject();textureProject.clips=[M.clip(textureAsset)];textureProject.clips[0].out=.125;textureProject.clips[0].grade.scanlines=1;
+  textureProject.texts=[{id:'bg-text',text:' ',start:0,end:.125,font:'sans-serif',size:20,x:50,y:50,stroke:0,color:'#ffffff',background:true,backgroundColor:'#ff0000',backgroundOpacity:1}];
   const textureBlob=await M.exportVideo(textureProject,{long:1920,mbps:8,start:0,length:.125,signal:new AbortController().signal});
   const textureInput=new M.Input({source:new M.BufferSource(await textureBlob.arrayBuffer()),formats:M.ALL_FORMATS});
   const textureTrack=await textureInput.getPrimaryVideoTrack();
   const textureDecoded=await new M.CanvasSink(textureTrack).getCanvas(0);
-  tc.drawImage(textureDecoded.canvas,0,0,320,180);textureStats.decodedScan=rowRange(tc.getImageData(0,0,320,180).data);textureStats.exportWidth=textureDecoded.canvas.width;
+  tc.drawImage(textureDecoded.canvas,0,0,320,180);textureStats.decodedScan=rowRange(tc.getImageData(0,0,320,180).data);textureStats.exportWidth=textureDecoded.canvas.width;textureStats.textBackground=[...tc.getImageData(160,90,1,1).data];
   textureInput.dispose();
   const a={id:'browser-image',name:'sample',kind:'image',duration:5,image:canvas};M.assets.set(a.id,a);
   const p=M.newProject();p.clips=[M.clip(a)];p.clips[0].out=5;
@@ -78,6 +79,7 @@ try{
   }
   return {neutral,bypass,changed,luma,chroma,maxAudioError,exports,textureStats};
  });
+ assert.ok(result.textureStats.textBackground[0]>220&&result.textureStats.textBackground[1]<25);
  assert.ok(result.textureStats.scanPreview>50);assert.ok(result.textureStats.scanExport>50);
  assert.ok(result.textureStats.scanDifference<20);assert.ok(result.textureStats.bleedDifference>30);
  assert.ok(Math.abs(result.textureStats.gray-160)<=1);assert.equal(result.textureStats.exportWidth,1920);assert.ok(result.textureStats.decodedScan>50);
@@ -113,6 +115,24 @@ try{
  assert.equal(await look.evaluate(el=>el.open),true);assert.equal(await texture.evaluate(el=>el.open),true);
  assert.equal(await page.locator('#lookSelect').inputValue(),'Cinema Soft');
  await page.locator('[data-action="lookReset"]').click();assert.equal(await page.locator('#lookSelect').inputValue(),'');
+ // Reset scopes and text controls in the live mobile UI.
+ await page.locator('[data-action="clipColorReset"]').click();
+ assert.equal(await page.locator('input[type="range"][data-key="g.density"]').inputValue(),'0');
+ assert.equal(await page.locator('input[type="range"][data-key="g.grain"]').inputValue(),'0.3');
+ await page.locator('[data-action="clipTextureReset"]').click();
+ assert.equal(await page.locator('input[type="range"][data-key="g.grain"]').inputValue(),'0');
+ await page.locator('#lookSelect').selectOption('Faded Film');
+ assert.ok((await page.locator('#lookDescription').textContent()).includes('白っぽい'));
+ await page.locator('[data-action="allColorReset"]').click();assert.equal(await page.locator('#lookSelect').inputValue(),'');
+ await page.locator('[data-tab="text"]').click();await page.locator('[data-action="addText"]').click();
+ await page.locator('input[data-field="background"]').check();
+ await page.locator('input[data-field="backgroundColor"]').evaluate(el=>{el.value='#ff0000';el.dispatchEvent(new Event('input',{bubbles:true}));});
+ await page.locator('input[type="range"][data-key="backgroundOpacity"]').evaluate(el=>{el.value='.4';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});
+ await page.locator('[data-action="duplicateText"]').click();assert.equal(await page.locator('#panel .item-list button').count(),2);
+ assert.equal(await page.locator('input[data-field="backgroundColor"]').inputValue(),'#ff0000');
+ assert.equal(await page.locator('input[type="range"][data-key="backgroundOpacity"]').inputValue(),'0.4');
+ await page.locator('#undo').click();assert.equal(await page.locator('#panel .item-list button').count(),1);
+ await page.locator('#redo').click();assert.equal(await page.locator('#panel .item-list button').count(),2);
  // Exercise the iPhone-style full-window fallback with the original rendered canvas.
  await page.evaluate(()=>{window.originalPreview=document.querySelector('#preview');document.documentElement.requestFullscreen=()=>Promise.reject(new Error('unsupported'));});
  await page.locator('#fullscreenOpen').click();

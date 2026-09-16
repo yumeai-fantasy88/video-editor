@@ -3,6 +3,19 @@ export const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 export const id = () => crypto.randomUUID();
 export const gradeDefault = () => ({density:0,depth:0,protect:0.7,exposure:0,contrast:1,saturation:1,temperature:0,tint:0,shadows:0,highlights:0,fade:0,red:0,yellow:0,green:0,cyan:0,blue:0,magenta:0,...colorDefaults()});
 export const newProject = () => ({version:1,name:'Untitled',fps:30,ratio:'16:9',look:gradeDefault(),clips:[],audio:[],texts:[],assets:[]});
+export function duplicateText(p,textId){
+  const index=p.texts.findIndex(t=>t.id===textId);if(index<0)return null;
+  const copy={...structuredClone(p.texts[index]),id:id()};p.texts.splice(index+1,0,copy);return copy;
+}
+export function resetClipColor(c,scope='all'){
+  const textureKeys=['grain','bleed','scanlines','textureOn'],defaults=gradeDefault();
+  c.grade={...defaults,...c.grade};
+  for(const key of Object.keys(defaults))if(scope==='all'||(scope==='texture'?textureKeys.includes(key):!textureKeys.includes(key)))c.grade[key]=defaults[key];
+  delete c.gradePreset;
+}
+export function resetAllColor(p){
+  p.clips.forEach(c=>resetClipColor(c));p.look=gradeDefault();delete p.lookPreset;delete p.referenceClip;
+}
 export const duration = c => (c.out-c.in)/c.speed;
 export function layout(p) {
   let cursor=0;
@@ -61,7 +74,12 @@ export function validateProject(p) {
   for(const c of p.clips){c.fit??='contain';c.offsetX??=0;c.offsetY??=0;if(!['contain','cover'].includes(c.fit)||!finite(c.offsetX,-100,100)||!finite(c.offsetY,-100,100))throw Error('サイズ・位置設定が不正です');}
   for(const a of p.audio)if(!finite(a.start,0,86400))throw Error('音声位置が不正です');
   for(const t of p.texts)if(!finite(t.start,0,86400)||!finite(t.end,t.start+0.000001,86400)||typeof t.text!=='string'||!finite(t.x,0,100)||!finite(t.y,0,100)||!finite(t.size,1,30)||!finite(t.stroke,0,20))throw Error('字幕設定が不正です');
+  for(const t of p.texts){
+    t.backgroundColor??='#000000';t.backgroundOpacity??=.65;
+    if(typeof t.backgroundColor!=='string'||!/^#[0-9a-f]{6}$/i.test(t.backgroundColor)||!finite(t.backgroundOpacity,0,1))throw Error('テキスト背景の設定が不正です');
+  }
   p.look={...gradeDefault(),...p.look};
   for(const g of [...p.clips.map(c=>c.grade),p.look]){for(const v of Object.values(g))if(!finite(v,-4,4))throw Error('カラー設定が不正です');for(const [k,[min,max]] of Object.entries(colorRanges))if(!finite(g[k],min,max))throw Error('カラー設定が範囲外です');}
   return p;
 }
+
