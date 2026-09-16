@@ -23,14 +23,26 @@ jobs:
       - run: npm install --no-save --package-lock=false playwright@1.55.0
       - run: npx playwright install chrome
       - run: node tests/browser-smoke.mjs
-      - name: Expose verified public bundle for review
-        run: |
-          node --input-type=module <<'NODE'
-          import {readFileSync} from 'node:fs';
-          const bundle=readFileSync('docs/app.js','utf8');
-          for(let i=0;i<bundle.length;i+=8000)console.log('VIDEO_EDITOR_BUILD '+JSON.stringify(bundle.slice(i,i+8000)));
-          NODE
       - uses: actions/upload-artifact@v4
         with:
           name: video-editor-build
           path: docs/
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: rm -rf docs
+      - uses: actions/download-artifact@v4
+        with:
+          name: video-editor-build
+          path: docs
+      - run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs
+          git diff --cached --quiet || git commit -m "Publish verified build [skip ci]"
+          git push
