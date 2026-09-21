@@ -60,3 +60,19 @@ input[type=number],input[type=text],select,textarea{background:#1b1e20;border-ra
 }
 
 .desktop-export{margin:12px 24px}@media(max-width:800px){.desktop-export{display:none}}
+
+/* v0.2.1: preview and controls share the editing viewport without overlap. */
+@media(max-width:800px){
+ #mobileViews{position:sticky;top:0;z-index:10;background:var(--bg)}
+ #workspace:not([data-view=preview]){height:calc(100dvh - 70px);min-height:260px;display:flex;flex-direction:column;overflow:hidden;padding-bottom:0;scroll-margin-top:70px}
+ #workspace:not([data-view=preview])>.viewer{display:block;flex:0 0 auto;padding:6px 12px;position:static}
+ #workspace:not([data-view=preview]) .screen{width:min(100%,calc(22dvh * var(--preview-ratio,16 / 9)));height:auto}
+ #workspace:not([data-view=preview]) .viewer-top{margin:0}
+ #workspace:not([data-view=preview]) .viewer-top button{min-height:32px;padding:3px 8px;font-size:11px}
+ #workspace:not([data-view=preview])>.timeline-area{flex:0 0 auto;padding:6px 12px;max-height:110px;overflow:auto}
+ #workspace:not([data-view=preview])>.inspector{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
+ #workspace:not([data-view=preview]) #panel{padding-bottom:24px}
+ #workspace[data-view=preview]>.timeline-area{display:none}
+ #workspace[data-view=preview] .screen{width:min(100%,calc(68dvh * var(--preview-ratio,16 / 9)))}
+ #miniPreview{display:none}
+}
