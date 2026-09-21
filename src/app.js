@@ -169,7 +169,24 @@ function editControl(e){const el=e.target,c=current();if(!c)return;if(e.type==='
   refresh(false);
 }
 $('#panel').addEventListener('input',editControl);
-$('#panel').addEventListener('change',e=>{if(e.target.tagName==='SELECT'||e.target.type==='checkbox')editControl(e);if(e.target.dataset.key){gestureKey=null;if(/^[gl]\./.test(e.target.dataset.key))syncColorControls();else panel();}});
+$('#panel').addEventListener('change',e=>{
+  if(e.target.tagName==='SELECT'||e.target.type==='checkbox')editControl(e);
+  if(!e.target.dataset.key)return;
+  gestureKey=null;
+  if(/^[gl]\./.test(e.target.dataset.key)){syncColorControls();return;}
+  if(tab!=='text'){panel();return;}
+  // Keep the existing inputs mounted: replacing the panel on change loses
+  // focus and lets iOS scroll the editor underneath the sticky preview.
+  const c=current();if(!c)return;
+  for(const input of $('#panel').querySelectorAll('[data-key]')){
+    const key=input.dataset.key;
+    if(/^[gl]\./.test(key))continue;
+    const value=key==='target'?(c.requested??duration(c)):c[key];
+    if(!Number.isFinite(value))continue;
+    const step=Number(input.step);
+    input.value=input.type==='number'?value.toFixed(step>=1?0:step===.001?3:2):value;
+  }
+});
 function stop(){const session=previewAudioSession;previewAudioSession=null;void session?.close();playing=false;playingToken++;$('#play').textContent='▶';$('#play').setAttribute('aria-label','再生');for(const s of scheduled)try{s.stop();}catch{}scheduled=[];}
 async function play(){if(playing){stop();return;}if(!p.clips.length||busy)return;audioContext??=new AudioContext();await audioContext.resume();if(time>=total(p)-1/p.fps)time=0;playing=true;const token=++playingToken;$('#play').textContent='Ⅱ';$('#play').setAttribute('aria-label','一時停止');const base=time,session=new AudioReadSession();previewAudioSession=session;let startAt;
   try{const first=await mixAudio(p,base,Math.min(1,total(p)-base),48000,session);if(token!==playingToken)return;startAt=audioContext.currentTime+.08;
