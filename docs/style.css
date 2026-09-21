@@ -25,3 +25,38 @@
    Keep the preview in normal flow so Safari cannot scroll inputs behind it.
    Do not toggle this on focus: doing so would move the page on every edit. */
 @media(max-width:800px){#workspace > .viewer{position:static;top:auto}}
+
+/* Shared studio visual language. Release 0.2.0. */
+:root{--bg:#101213;--panel:#191c1e;--line:#34383b;--muted:#a5a8aa;--accent:#d8d2c7}
+html,body{max-width:100%;overflow-x:clip}
+button,a.download{border-radius:10px;background:#1b1e20}
+button:hover{background:#292d30}.primary{background:var(--accent);color:#17191b}.primary:hover{background:#e5dfd5}
+header.studio-header{height:auto;display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:22px 26px}
+.studio-title{font-size:18px;font-weight:700;letter-spacing:.06em}.release-button{display:block;border:0;padding:2px 0;min-height:32px;background:transparent;color:var(--muted);font-size:12px;letter-spacing:.12em;text-align:left}
+#sessionName{min-width:0;align-self:center}#sessionName #projectName{max-width:100%;width:100%;font-size:20px;font-weight:600}
+.studio-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 48px 1fr 1fr auto;gap:10px}.studio-actions span{min-width:0}.studio-actions button{width:100%;min-height:46px}
+.studio-note{grid-column:1/-1;margin:0;color:var(--muted);font-size:12px}
+#mobileViews{display:none}.screen{border-radius:10px}.transport .play{border-radius:50%;background:var(--accent);color:#141617}
+input[type=number],input[type=text],select,textarea{background:#1b1e20;border-radius:9px}
+#panel h2{font-size:20px}#panel textarea{font-size:16px}.control-head input[type=number]{font-size:16px}
+#miniPreview{display:none}#releaseDialog li{margin:10px 0}
+@media(max-width:800px){
+ header.studio-header{padding:18px 14px;gap:12px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ .studio-title{font-size:15px;letter-spacing:.035em}.release-button{font-size:11px}#sessionName #projectName{font-size:18px}
+ .studio-actions{grid-template-columns:1fr 44px 1fr 1fr;gap:8px}.studio-actions #projectMenu{grid-column:1/-1;width:auto;justify-self:start;min-height:36px;font-size:13px}
+ #mobileViews{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;padding:10px 8px;border-block:1px solid var(--line)}
+ #mobileViews button{padding:10px 2px;min-height:48px;font-size:12px;white-space:nowrap}
+ #mobileViews button[aria-pressed=true]{background:var(--accent);color:#17191b;border-color:var(--accent)}
+ #workspace>.viewer{position:static;padding:14px}#workspace>.timeline-area{padding:14px}
+ #workspace:not([data-view=preview])>.viewer{display:none}
+ #workspace[data-view=preview]>.inspector{display:none}
+ #workspace[data-view=text]>.timeline-area,#workspace[data-view=color]>.timeline-area{display:none}
+ #workspace[data-view=text] #tabs,#workspace[data-view=color] #tabs{display:none}
+ #workspace[data-view=edit] #tabs [data-tab=text],#workspace[data-view=edit] #tabs [data-tab=color]{display:none}
+ #panel{overflow:visible;padding:18px 16px 90px}#workspace{padding-bottom:72px}
+ #miniPreview{display:block;position:fixed;bottom:max(12px,env(safe-area-inset-bottom));right:14px;z-index:9;box-shadow:0 4px 20px #0008;background:var(--accent);color:#17191b}
+ body:has(#workspace[data-view=preview]) #miniPreview,body:has(dialog[open]) #miniPreview{display:none}
+ #fullscreenPreview .viewer{display:flex}
+}
+
+.desktop-export{margin:12px 24px}@media(max-width:800px){.desktop-export{display:none}}
