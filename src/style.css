@@ -76,3 +76,16 @@ input[type=number],input[type=text],select,textarea{background:#1b1e20;border-ra
  #workspace[data-view=preview] .screen{width:min(100%,calc(68dvh * var(--preview-ratio,16 / 9)))}
  #miniPreview{display:none}
 }
+
+/* v0.2.3: all editing views share the same compact, scrollable timeline. */
+@media(max-width:800px){
+ #workspace[data-view=text]>.timeline-area,#workspace[data-view=color]>.timeline-area{display:block}
+ #workspace:not([data-view=preview])>.timeline-area{max-height:none;height:154px;flex:0 0 154px;overflow:hidden;display:flex;flex-direction:column}
+ #workspace:not([data-view=preview]) .timeline-tools{flex:none;margin-bottom:4px}
+ #workspace:not([data-view=preview]) .timeline-tools button{min-height:32px;padding:2px 8px}
+ #workspace:not([data-view=preview]) .timeline-scroll{flex:1;min-height:0;max-height:none;overflow:auto}
+ #workspace:not([data-view=preview]) .hint{display:none}
+ #workspace:not([data-view=preview]) .track{height:32px;margin:2px 0}
+ #workspace:not([data-view=preview]) .block{height:30px;min-height:30px;padding:2px 6px}
+ #workspace:not([data-view=preview]) .block small{display:none}
+}
