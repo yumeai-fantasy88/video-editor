@@ -20,3 +20,8 @@
 #fullscreenPreview #scrub{width:100%;margin:4px 0 8px}
 #fullscreenOpen{white-space:nowrap}
 @media(max-width:480px){.viewer-top{flex-wrap:wrap}.viewer-top #projectName{flex:1;min-width:70px;width:70px}.viewer-top button{padding:8px}}
+
+/* Mobile editing needs the full viewport when the software keyboard opens.
+   Keep the preview in normal flow so Safari cannot scroll inputs behind it.
+   Do not toggle this on focus: doing so would move the page on every edit. */
+@media(max-width:800px){#workspace > .viewer{position:static;top:auto}}
