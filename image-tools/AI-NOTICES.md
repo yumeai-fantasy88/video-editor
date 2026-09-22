@@ -4,6 +4,10 @@ Images stay in the browser. The page downloads model/runtime assets from Hugging
 
 ## Model
 
+withoutBG Open Model (WBGNet), Copyright 2026 Imran Kocabiyik.
+Built with DINOv3. This product includes DINOv3 Materials from Meta Platforms.
+The preprocessing was adapted for JavaScript from the Apache-2.0 reference implementation; see [APACHE-2.0.txt](APACHE-2.0.txt).
+
 withoutBG Open Weights v10.0.0, pinned to `cfae4da1ee09b27c45af2af2096d4d14721508ba`:
 https://huggingface.co/withoutbg/withoutbg-openweights-onnx
 
@@ -34,3 +38,5 @@ Loaded from jsDelivr on demand. Single-threaded WASM inside a dedicated Worker, 
 ## Validation
 
 See `tests/image-tools-alpha.cjs` for tensor layout, alpha preservation and foreground-colour recovery checks. Model quality and device compatibility must be assessed with real images; numerical helper tests do not establish inference quality.
+
+2026-09-22: Deployed page tested in desktop Chrome using a synthetic 512px cup fixture. Real ONNX download and inference completed. Downloaded RGBA PNG had 212,505 fully transparent, 37,831 partially transparent and 11,808 opaque pixels; background corner alpha 0, label alpha 255. Original/result comparison and cancellation/re-enabling controls worked. This verifies the processing path, not real-glass restoration quality. iPhone hardware was not tested.
