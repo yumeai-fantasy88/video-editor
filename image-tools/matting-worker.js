@@ -13,7 +13,7 @@ async function modelBytes() {
   const cached = !!response;
   if (!response) response = await fetch(url);
   if (!response.ok) throw new Error('AIデータを取得できませんでした。通信状態を確認して再試行してください。');
-  const total = Number(response.headers.get('content-length')) || 454500000;
+  const total = Number(response.headers.get('content-length'));
   const reader = response.body.getReader();
   let chunks = [], length = 0, last = 0;
   while (true) {
@@ -22,7 +22,7 @@ async function modelBytes() {
     chunks.push(value); length += value.byteLength;
     if (length > 550000000) throw new Error('AIデータのサイズが想定と異なります。');
     if (Date.now()-last>300) {
-      report(`${cached?'保存済みのAIデータ':'AIデータ'}を読み込み中… ${Math.round(length/1000000)} MB`, Math.min(.65,length/total*.65));
+      report(`${cached?'保存済みのAIデータ':'AIデータ'}を読み込み中… ${Math.round(length/1000000)} MB`, total>0?Math.min(1,length/total):undefined);
       last=Date.now();
     }
   }
@@ -32,6 +32,7 @@ async function modelBytes() {
   if (length < 100000000) throw new Error('AIデータが不完全です。もう一度お試しください。');
   // Cache only complete downloads. Cache quota failures must not block inference.
   if (!cached && cache) {
+    report('AIデータを端末に保存しています…');
     try { await cache.put(url,new Response(bytes,{headers:{'content-type':'application/octet-stream','content-length':String(length)}})); } catch (_) {}
   }
   return bytes;
@@ -41,18 +42,18 @@ self.onmessage = async ({data}) => {
   running=true;
   try {
     if (!session) {
-      report('AI処理を準備しています…',0);
+      report('AI処理を準備しています…');
       importScripts(RUNTIME+'ort.min.js');
       ort.env.wasm.wasmPaths=RUNTIME;
       ort.env.wasm.numThreads=1; // GitHub Pages has no cross-origin isolation headers.
       ort.env.wasm.proxy=false;
       let bytes=await modelBytes();
-      report('AIモデルを展開しています…',.68);
+      report('AIモデルを展開しています…');
       session=await ort.InferenceSession.create(bytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
       bytes=null;
       if (session.inputNames[0]!=='rgb' || !session.outputNames.includes('alpha')) throw new Error('AIモデルの形式を確認できませんでした。');
     }
-    report('被写体と半透明部分を推定しています…',.75);
+    report('被写体と半透明部分を推定しています…');
     const tensor=new ort.Tensor('float32',new Float32Array(data.pixels),[1,3,448,448]);
     let outputs;
     try {

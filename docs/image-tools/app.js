@@ -5,7 +5,22 @@
   const state = { file: null, image: null, sourceUrl: null, resultUrl: null, generation: 0, revision: 0, sampling: false, busy: false, worker: null, rejectAI: null, alphaCache: null, job: 0 };
   const formatSize = bytes => bytes < 1048576 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
   const selected = name => document.querySelector(`input[name="${name}"]:checked`).value;
-  const status = message => { $('status').textContent = message; };
+  const status = message => { $('status').textContent = message; if(state.busy) $('taskStage').textContent=message; };
+  const taskPanel=document.createElement('aside');
+  taskPanel.id='taskPanel';taskPanel.hidden=true;
+  taskPanel.innerHTML='<strong id="taskStage" role="status"></strong><div><span id="taskPercent">処理中</span> · <span id="taskElapsed">0秒</span></div><progress id="taskProgress" max="1" aria-label="現在の工程の進捗"></progress><button id="taskCancel" class="secondary">処理を中止</button>';
+  document.body.append(taskPanel);
+  let progressTimer,startedAt,idleTimer;
+  const yieldUI=()=>new Promise(resolve=>setTimeout(resolve,0));
+  function progress(message,value) {
+    status(message);
+    for(const id of ['progress','taskProgress']) {
+      if(Number.isFinite(value)) $(id).value=Math.max(0,Math.min(1,value));
+      else $(id).removeAttribute('value');
+    }
+    $('taskPercent').textContent=Number.isFinite(value)?`この工程 ${Math.round(value*100)}%`:'処理中';
+  }
+  function releaseLater() {clearTimeout(idleTimer);idleTimer=setTimeout(()=>{if(!state.rejectAI)stopAI();},120000);}
   function clearResult() {
     state.revision++;
     if (state.resultUrl) URL.revokeObjectURL(state.resultUrl);
@@ -17,7 +32,8 @@
     status('');
   }
   function hexToRgb(hex) { return [1,3,5].map(i => parseInt(hex.slice(i,i+2),16)); }
-  async function removeEdgeBackground(ctx, width, height, hex, tolerance) {
+  async function removeEdgeBackground(ctx, width, height, hex, tolerance, job) {
+    progress('背景色を透過しています…');await yieldUI();
     const image = ctx.getImageData(0,0,width,height);
     const data = image.data, count = width*height;
     const visited = new Uint8Array(count), queue = new Uint32Array(count);
@@ -45,7 +61,8 @@
         if (i>=width) tryPixel(i-width);
         if (i<count-width) tryPixel(i+width);
       }
-      if (head<tail) await new Promise(resolve => setTimeout(resolve,0));
+      if (head<tail) await yieldUI();
+      if(job!==state.job)throw new DOMException('中止','AbortError');
     }
     ctx.putImageData(image,0,0);
   }
@@ -144,6 +161,12 @@
   let disabledBefore=[];
   function busy(value) {
     state.busy=value;
+    taskPanel.hidden=!value;
+    clearInterval(progressTimer);
+    if(value) {
+      clearTimeout(idleTimer);startedAt=Date.now();$('taskElapsed').textContent='0秒';
+      progressTimer=setInterval(()=>{$('taskElapsed').textContent=`${Math.floor((Date.now()-startedAt)/1000)}秒`;},1000);
+    } else releaseLater();
     const panel=document.querySelector('.settings'); panel.setAttribute('aria-busy',String(value));
     if(value) {
       disabledBefore=Array.from(panel.querySelectorAll('input,select,button')).map(el=>[el,el.disabled]);
@@ -153,10 +176,13 @@
     $('convert').textContent=value?'処理中…':'画像を作成';
   }
   function stopAI() {
+    clearTimeout(idleTimer);
     state.worker?.terminate();state.worker=null;
     if(state.rejectAI){state.rejectAI(new DOMException('処理を中止しました。','AbortError'));state.rejectAI=null;}
   }
   $('cancel').addEventListener('click',()=>{state.job++;stopAI();busy(false);status('処理を中止しました。');});
+  $('taskCancel').addEventListener('click',()=>$('cancel').click());
+  window.addEventListener('pagehide',()=>{if(!state.busy)stopAI();});
   async function estimateAlpha(image) {
     if(state.alphaCache)return state.alphaCache;
     const shape=ImageAlpha.letterbox(image.naturalWidth,image.naturalHeight);
@@ -167,22 +193,24 @@
     const rgba=ctx.getImageData(0,0,448,448).data;
     const tensor=ImageAlpha.rgbTensor(rgba);
     canvas.width=canvas.height=0;
-    const worker=new Worker('matting-worker.js?v=3');state.worker=worker;
+    clearTimeout(idleTimer);
+    const worker=state.worker||new Worker('matting-worker.js?v=4');state.worker=worker;
     const alpha=await new Promise((resolve,reject)=>{
       state.rejectAI=reject;
       worker.onmessage=({data})=>{
-        if(data.type==='progress') {status(data.text);$('progress').value=data.value;}
+        if(data.type==='progress') progress(data.text,data.value);
         if(data.type==='result')resolve(new Float32Array(data.alpha));
         if(data.type==='error')reject(new Error(data.text));
       };
       worker.onerror=()=>reject(new Error('AI処理を起動できませんでした。通信状態とブラウザを確認してください。'));
       worker.postMessage({pixels:tensor.buffer},[tensor.buffer]);
-    }).finally(()=>{worker.terminate();if(state.worker===worker){state.worker=null;state.rejectAI=null;}});
+    }).catch(error=>{worker.terminate();if(state.worker===worker)state.worker=null;throw error;})
+      .finally(()=>{worker.onmessage=null;worker.onerror=null;if(state.worker===worker)state.rejectAI=null;});
     const estimate=ImageAlpha.backgroundEstimate(rgba,alpha,shape.width,shape.height);
     state.alphaCache={alpha,shape,...estimate};return state.alphaCache;
   }
   async function applyMatting(ctx,width,height,cache,strength,job) {
-    status('半透明PNGを作成しています…');$('progress').value=.92;
+    progress('半透明の仕上げ処理…',0);await yieldUI();
     const {alpha,shape,background,distance}=cache;
     const mask=document.createElement('canvas');mask.width=shape.width;mask.height=shape.height;
     const mc=mask.getContext('2d'),maskData=mc.createImageData(shape.width,shape.height);
@@ -193,19 +221,24 @@
     mc.putImageData(maskData,0,0);
     const scaled=document.createElement('canvas');scaled.width=width;scaled.height=height;
     const sc=scaled.getContext('2d',{willReadFrequently:true});sc.drawImage(mask,0,0,width,height);
-    const alphas=sc.getImageData(0,0,width,height).data;
-    const output=ctx.getImageData(0,0,width,height),pixels=output.data;
-    for(let y=0;y<height;y++) {
+    const xLookup=Uint16Array.from({length:width},(_,x)=>Math.min(shape.width-1,Math.floor((x+.5)*shape.width/width)));
+    const confidenceMap=Float32Array.from(distance,d=>d<0?0:Math.max(0,1-d/(Math.max(shape.width,shape.height)*.35)));
+    try {for(let row=0;row<height;row+=64) {
+      const rows=Math.min(64,height-row);
+      const alphas=sc.getImageData(0,row,width,rows).data;
+      const output=ctx.getImageData(0,row,width,rows),pixels=output.data;
+    for(let y=row;y<row+rows;y++) {
       const sy=Math.min(shape.height-1,Math.floor((y+.5)*shape.height/height));
       for(let x=0;x<width;x++) {
-        const i=y*width+x,p=i*4,a=alphas[p]/255;
-        const sx=Math.min(shape.width-1,Math.floor((x+.5)*shape.width/width)),b=sy*shape.width+sx;
-        const confidence=distance[b]<0?0:Math.max(0,1-distance[b]/(Math.max(shape.width,shape.height)*.35));
-        ImageAlpha.compositePixel(pixels,p,a,background,b,strength,confidence);
+        const i=(y-row)*width+x,p=i*4,a=alphas[p]/255;
+        const b=sy*shape.width+xLookup[x];
+        ImageAlpha.compositePixel(pixels,p,a,background,b,strength,confidenceMap[b]);
       }
-      if(y%64===0) {await new Promise(r=>setTimeout(r,0));if(job!==state.job)throw new DOMException('中止','AbortError');}
     }
-    ctx.putImageData(output,0,0);mask.width=mask.height=scaled.width=scaled.height=0;
+      ctx.putImageData(output,0,row);
+      progress('半透明の仕上げ処理…',(row+rows)/height);
+      await yieldUI();if(job!==state.job)throw new DOMException('中止','AbortError');
+    }} finally {mask.width=mask.height=scaled.width=scaled.height=0;}
   }
   $('convert').addEventListener('click', async () => {
     if (!state.image || state.busy) return;
@@ -216,10 +249,13 @@
     const image=state.image,format=selected('format'),method=$('removalMethod').value;
     const strength=Number($('decontaminate').value)/100,current=state.generation,job=++state.job;
     clearResult();const revision=state.revision;
-    busy(true);$('progress').removeAttribute('value');status('画像を処理しています…');
+    busy(true);progress('画像を処理しています…');
     let canvas;
     try {
+      await yieldUI();
       const cache=removing&&method==='ai'?await estimateAlpha(image):null;
+      if(job!==state.job)return;
+      progress('出力サイズに変換しています…');await yieldUI();
       if(job!==state.job)return;
       canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
       const ctx=canvas.getContext('2d',{alpha:format==='image/png',willReadFrequently:removing});
@@ -227,7 +263,9 @@
       if(format==='image/jpeg'){ctx.fillStyle=$('matte').value;ctx.fillRect(0,0,width,height);}
       ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(image,0,0,width,height);
       if(cache)await applyMatting(ctx,width,height,cache,strength,job);
-      else if(removing)await removeEdgeBackground(ctx,width,height,$('backgroundColor').value,Number($('tolerance').value));
+      else if(removing)await removeEdgeBackground(ctx,width,height,$('backgroundColor').value,Number($('tolerance').value),job);
+      if(job!==state.job)return;
+      progress('保存用の画像を圧縮しています…');await yieldUI();
       if(job!==state.job)return;
       const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('保存データを作れませんでした。')),format,Number($('quality').value)/100));
       if(current!==state.generation || revision!==state.revision || job!==state.job)return;
