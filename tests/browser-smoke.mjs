@@ -94,7 +94,13 @@ try{
  await page.setViewportSize({width:390,height:844});
  await page.evaluate(async()=>{const canvas=document.createElement('canvas');canvas.width=64;canvas.height=64;canvas.getContext('2d').fillRect(0,0,64,64);const blob=await new Promise(r=>canvas.toBlob(r));const dt=new DataTransfer();dt.items.add(new File([blob],'ui-fixture.png',{type:'image/png'}));const input=document.querySelector('#mediaInput');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));});
  await page.waitForFunction(()=>document.querySelector('#timeline .block.video')&&!document.querySelector('#workspace').inert);
- await page.locator('[data-tab="color"]').click();
+ await page.locator('[data-view="edit"]').click();
+ await page.locator('[data-tab="audio"]').click();
+ assert.ok((await page.locator('#audioInput').getAttribute('accept')).includes('.mp3'));
+ await page.evaluate(()=>{const input=document.querySelector('#audioInput');input.click=()=>{window.audioPickerRequested=true;};});
+ await page.locator('[data-action="import"]').click();
+ assert.equal(await page.evaluate(()=>window.audioPickerRequested),true);
+ await page.locator('[data-view="color"]').click();
  const look=page.locator('[data-panel-section="clip-look"]'),texture=page.locator('[data-panel-section="clip-texture"]');
  await look.locator('summary').click();await texture.locator('summary').click();
  await page.locator('[data-panel-section="noise"] summary').click();
@@ -115,7 +121,7 @@ try{
  await page.locator('#undo').click();assert.equal(await page.locator('#lookSelect option:checked').textContent(),'Cinema Soft');
  await page.locator('#redo').click();assert.equal(await page.locator('#lookSelect option:checked').textContent(),'Cinema Soft（調整済み）');
  assert.equal(await texture.evaluate(el=>el.open),true);
- await page.locator('[data-tab="edit"]').click();await page.locator('[data-tab="color"]').click();
+ await page.locator('[data-view="edit"]').click();await page.locator('[data-view="color"]').click();
  assert.equal(await look.evaluate(el=>el.open),true);assert.equal(await texture.evaluate(el=>el.open),true);
  assert.equal(await page.locator('#lookSelect').inputValue(),'Cinema Soft');
  await page.locator('[data-action="lookReset"]').click();assert.equal(await page.locator('#lookSelect').inputValue(),'');
@@ -128,7 +134,7 @@ try{
  await page.locator('#lookSelect').selectOption('Dreamcore');
  assert.ok((await page.locator('#lookDescription').textContent()).includes('緑寄りの影'));
  await page.locator('[data-action="allColorReset"]').click();assert.equal(await page.locator('#lookSelect').inputValue(),'');
- await page.locator('[data-tab="text"]').click();await page.locator('[data-action="addText"]').click();
+ await page.locator('[data-view="text"]').click();await page.locator('[data-action="addText"]').click();
  await page.locator('input[data-field="background"]').check();
  await page.locator('input[data-field="backgroundColor"]').evaluate(el=>{el.value='#ff0000';el.dispatchEvent(new Event('input',{bubbles:true}));});
  await page.locator('input[type="range"][data-key="backgroundOpacity"]').evaluate(el=>{el.value='.4';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));});
@@ -139,6 +145,7 @@ try{
  await page.locator('#redo').click();assert.equal(await page.locator('#panel .item-list button').count(),2);
  // Exercise the iPhone-style full-window fallback with the original rendered canvas.
  await page.evaluate(()=>{window.originalPreview=document.querySelector('#preview');document.documentElement.requestFullscreen=()=>Promise.reject(new Error('unsupported'));});
+ await page.locator('[data-view="preview"]').click();
  await page.locator('#fullscreenOpen').click();
  assert.equal(await page.locator('#fullscreenPreview').evaluate(el=>el.open),true);
  assert.equal(await page.evaluate(()=>document.querySelector('#fullscreenPreview #preview')===window.originalPreview),true);
@@ -160,4 +167,3 @@ try{
  assert.deepEqual(errors,[]);
  console.log('Browser shader, neutral bypass, H.264 trial export and FPS checks passed',JSON.stringify(result));
 }finally{await browser.close();await new Promise(r=>server.close(r));await rm('.browser-test',{recursive:true,force:true});}
-
