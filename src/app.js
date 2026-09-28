@@ -116,13 +116,16 @@ async function importFiles(files){stop();busy=true;$('#workspace').inert=true;tr
     const a=await loadAsset(file,match?.id);if(!match){p.assets.push(assetMeta(a));const c=clip(a);if(a.kind==='audio'){c.start=time;p.audio.push(c);tab='audio';}else{p.clips.push(c);tab='edit';time=layout(p).at(-1).start;}selected=c.id;}
   }catch(e){status(`${file.name}: ${e.message}`);alert(`${file.name}\n${e.message}`);}}
   }finally{busy=false;reconnecting=false;$('#workspace').inert=false;updateTabs();refresh();const missing=p.assets.filter(a=>!assets.has(a.id));status(missing.length?`未接続の素材：${missing.map(a=>a.name).join('、')}`:'素材を読み込みました');}}
-function chooseMedia(relink=false){reconnecting=relink;$('#mediaInput').accept='video/*,audio/*,image/*,.density.json';$('#mediaInput').click();}
+function chooseMedia(relink=false){reconnecting=relink;$('#mediaInput').accept=relink?'video/*,audio/*,image/*,.density.json':'video/*,image/*,.density.json';$('#mediaInput').click();}
+function chooseAudio(){reconnecting=false;$('#audioInput').click();}
 $('#mediaInput').onchange=e=>{importFiles([...e.target.files]);e.target.value='';};
-for(const selector of ['#import','#firstImport'])$(selector).onclick=()=>chooseMedia();
+$('#audioInput').onchange=e=>{importFiles([...e.target.files]);e.target.value='';};
+$('#import').onclick=()=>tab==='audio'?chooseAudio():chooseMedia();
+$('#firstImport').onclick=()=>chooseMedia();
 function updateTabs(){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));}
 $('#tabs').onclick=e=>{const b=e.target.closest('[data-tab]');if(b){tab=b.dataset.tab;updateTabs();panel();}};
 $('#timeline').onclick=e=>{const b=e.target.closest('[data-select]');if(b){stop();selected=b.dataset.select;const c=current();time=p.clips.includes(c)?layout(p).find(x=>x.id===c.id).start:c.start;if(p.texts.includes(c))tab='text';else if(p.audio.includes(c))tab='audio';updateTabs();refresh();}else{stop();const r=$('#timeline').getBoundingClientRect();time=clamp(Math.round((e.clientX-r.left)/zoom*p.fps)/p.fps,0,total(p));refresh(false);}};
-$('#panel').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.select){stop();selected=b.dataset.select;const item=current();if(p.texts.includes(item))time=item.start;refresh();return;}const action=b.dataset.action,c=current();if(['import','srt','font'].includes(action)){if(action==='import')chooseMedia();else $(action==='srt'?'#srtInput':'#fontInput').click();return;}
+$('#panel').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.select){stop();selected=b.dataset.select;const item=current();if(p.texts.includes(item))time=item.start;refresh();return;}const action=b.dataset.action,c=current();if(['import','srt','font'].includes(action)){if(action==='import'){if(tab==='audio')chooseAudio();else chooseMedia();}else $(action==='srt'?'#srtInput':'#fontInput').click();return;}
   if(action==='presetExport'){saveBlob(new Blob([JSON.stringify({type:'density-grade',grade:c.grade},null,2)],{type:'application/json'}),'look.density.json');return;}
   if(action==='presetSave'){const name=prompt('プリセット名');if(name){presets[name]=structuredClone(c.grade);try{localStorage.setItem('density-presets',JSON.stringify(presets));}catch{status('保存容量が不足しています。設定をダウンロードしてください');}panel();}return;}
   if(action==='referenceView'||action==='matchColor'){await compareClips(action==='matchColor');return;}
