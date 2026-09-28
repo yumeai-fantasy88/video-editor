@@ -162,7 +162,7 @@ try{
  await page.locator('#fullscreenOpen').click();await page.keyboard.press('Escape');
  assert.equal(await page.locator('#fullscreenPreview').evaluate(el=>el.open),false);
  await page.setViewportSize({width:390,height:844});
- await page.locator('#exportOpen').click();assert.deepEqual(await page.locator('#exportFps option').allTextContents(),['24','25','30','50','60']);
+ await page.locator('[data-view="export"]').click();assert.deepEqual(await page.locator('#exportFps option').allTextContents(),['24','25','30','50','60']);
  assert.equal(await page.locator('#trialLength option').count(),3);
  assert.deepEqual(errors,[]);
  console.log('Browser shader, neutral bypass, H.264 trial export and FPS checks passed',JSON.stringify(result));
