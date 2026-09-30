@@ -3,6 +3,7 @@
   const $ = id => document.getElementById(id);
   const fileInput = $('file'), dropzone = $('dropzone'), preview = $('previewImage');
   const state = { file: null, image: null, sourceUrl: null, resultUrl: null, generation: 0, revision: 0, sampling: false, busy: false, worker: null, rejectAI: null, alphaCache: null, job: 0 };
+  const mobileMemory = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
   const formatSize = bytes => bytes < 1048576 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
   const selected = name => document.querySelector(`input[name="${name}"]:checked`).value;
   const status = message => { $('status').textContent = message; if(state.busy) $('taskStage').textContent=message; };
@@ -194,7 +195,7 @@
     const tensor=ImageAlpha.rgbTensor(rgba);
     canvas.width=canvas.height=0;
     clearTimeout(idleTimer);
-    const worker=state.worker||new Worker('matting-worker.js?v=4');state.worker=worker;
+    const worker=state.worker||new Worker('matting-worker.js?v=5');state.worker=worker;
     const alpha=await new Promise((resolve,reject)=>{
       state.rejectAI=reject;
       worker.onmessage=({data})=>{
@@ -206,6 +207,9 @@
       worker.postMessage({pixels:tensor.buffer},[tensor.buffer]);
     }).catch(error=>{worker.terminate();if(state.worker===worker)state.worker=null;throw error;})
       .finally(()=>{worker.onmessage=null;worker.onerror=null;if(state.worker===worker)state.rejectAI=null;});
+    // Keep the small alpha cache, but release the large WASM/model memory before
+    // allocating the export canvas on phones and tablets.
+    if(mobileMemory)stopAI();
     const estimate=ImageAlpha.backgroundEstimate(rgba,alpha,shape.width,shape.height);
     state.alphaCache={alpha,shape,...estimate};return state.alphaCache;
   }

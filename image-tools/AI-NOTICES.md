@@ -1,4 +1,4 @@
-# Image Tools v3 — automatic alpha matting (experimental)
+# Image Tools v4 — automatic alpha matting (experimental)
 
 Images stay in the browser. The page downloads model/runtime assets from Hugging Face and jsDelivr; it does not upload input images or call a paid inference API. First model download is approximately 455 MB. Cache storage is best effort and can be evicted by the browser. Processing requires substantial memory; mobile devices may fail or reload the page. Cancel terminates the worker.
 
@@ -40,3 +40,6 @@ Loaded from jsDelivr on demand. Single-threaded WASM inside a dedicated Worker, 
 See `tests/image-tools-alpha.cjs` for tensor layout, alpha preservation and foreground-colour recovery checks. Model quality and device compatibility must be assessed with real images; numerical helper tests do not establish inference quality.
 
 2026-09-22: Deployed page tested in desktop Chrome using a synthetic 512px cup fixture. Real ONNX download and inference completed. Downloaded RGBA PNG had 212,505 fully transparent, 37,831 partially transparent and 11,808 opaque pixels; background corner alpha 0, label alpha 255. Original/result comparison and cancellation/re-enabling controls worked. This verifies the processing path, not real-glass restoration quality. iPhone hardware was not tested.
+
+
+2026-09-30: Model download is streamed into Cache Storage before allocating the ONNX input buffer; it no longer retains all network chunks while allocating a second full model buffer. When storage is unavailable, a bounded single-buffer load uses Content-Length. Downloads without a known length require Cache Storage. Phones/tablets terminate the inference worker immediately after alpha estimation and retain only the small alpha cache before export. The original v10 model and alpha quality are unchanged. Runtime/session initialization still requires substantially more memory than the download size; iPhone hardware success is not established by these changes.
