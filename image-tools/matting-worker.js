@@ -94,6 +94,40 @@ async function modelBytes() {
   try { return await readModel(response,size); }
   catch (error) { if (cache) { try { await cache.delete(url); } catch (_) {} } throw error; }
 }
+async function lightModelBytes() {
+  const root=new URL('models/q8-v1/',self.location.href);
+  const manifestResponse=await fetch(new URL('manifest.json',root));
+  if(!manifestResponse.ok)throw new Error('軽量モデルの公開準備中です。時間をおいて再度お試しください。');
+  const manifest=await manifestResponse.json();
+  if(!Number.isSafeInteger(manifest.size)||manifest.size<100000000||manifest.size>130000000||!Array.isArray(manifest.parts)||manifest.parts.length!==3)throw new Error('軽量モデルの情報が不正です。');
+  if(manifest.parts.reduce((n,p)=>n+p.size,0)!==manifest.size)throw new Error('軽量モデルのサイズが不正です。');
+  let cache;try{cache=await caches.open('image-tools-matting-q8-v1');}catch(_){}
+  const bytes=new Uint8Array(manifest.size);let offset=0;
+  for(let i=0;i<manifest.parts.length;i++) {
+    const part=manifest.parts[i];
+    if(part.file!==`model-${i}.bin`||!Number.isSafeInteger(part.size)||part.size<=0||part.size>40000000)throw new Error('軽量モデルの分割情報が不正です。');
+    const url=new URL(part.file,root).href;
+    let response;try{response=cache&&await cache.match(url);}catch(_){cache=null;}
+    if(!response) {
+      report(`軽量AIデータをダウンロード中… ${i+1}/3`,offset/manifest.size);
+      response=await fetch(url);if(!response.ok)throw new Error('軽量AIデータを取得できませんでした。');
+      if(cache) {
+        try {await cache.put(url,response);response=await cache.match(url);}
+        catch(_) {try{await cache.delete(url);}catch(_){}response=await fetch(url);if(!response.ok)throw new Error('軽量AIデータを取得できませんでした。');}
+      }
+    }
+    let length=0;const reader=response.body.getReader();
+    try{while(true){const {done,value}=await reader.read();if(done)break;if(length+value.byteLength>part.size)throw new Error('軽量AIデータのサイズが不正です。');bytes.set(value,offset+length);length+=value.byteLength;report(`軽量AIデータを読み込み中… ${Math.round((offset+length)/1000000)} MB`,(offset+length)/manifest.size);}}
+    finally {await reader.cancel().catch(()=>{});reader.releaseLock();}
+    if(length!==part.size){if(cache)await cache.delete(url);throw new Error('軽量AIデータが不完全です。');}
+    const digest=await crypto.subtle.digest('SHA-256',bytes.subarray(offset,offset+length));
+    const hash=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
+    if(hash!==part.sha256){if(cache)await cache.delete(url);throw new Error('軽量AIデータの検証に失敗しました。再度お試しください。');}
+    offset+=length;
+  }
+  return bytes;
+}
+
 self.onmessage = async ({data}) => {
   if (running) return;
   running=true;
@@ -104,9 +138,10 @@ self.onmessage = async ({data}) => {
       ort.env.wasm.wasmPaths=RUNTIME;
       ort.env.wasm.numThreads=1; // GitHub Pages has no cross-origin isolation headers.
       ort.env.wasm.proxy=false;
-      let bytes=await modelBytes();
+      const light=data.model==='light';
+      let bytes=await(light?lightModelBytes():modelBytes());
       report('AIモデルを展開しています…');
-      session=await ort.InferenceSession.create(bytes,{executionProviders:['wasm'],graphOptimizationLevel:'all'});
+      session=await ort.InferenceSession.create(bytes,{executionProviders:['wasm'],graphOptimizationLevel:light?'disabled':'all',enableCpuMemArena:!light,enableMemPattern:!light});
       bytes=null;
       if (session.inputNames[0]!=='rgb' || !session.outputNames.includes('alpha')) throw new Error('AIモデルの形式を確認できませんでした。');
     }
@@ -126,6 +161,7 @@ self.onmessage = async ({data}) => {
     }
   } catch(error) {
     console.error('Image Tools matting:', error);
-    self.postMessage({type:'error',text:'自動透過を完了できませんでした。'+String(error.message||error)+' スマートフォンで終了が続く場合、この455MBモデルは端末の処理上限を超える可能性があります。',detail:String(error.message||error)});
+    self.postMessage({type:'error',text:'自動透過を完了できませんでした。'+String(error.message||error)+' スマートフォンで終了が続く場合、選択したモデルが端末の処理上限を超える可能性があります。',detail:String(error.message||error)});
   } finally { running=false; }
 };
+

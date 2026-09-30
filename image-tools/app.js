@@ -6,6 +6,16 @@
   const mobileMemory = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
   const formatSize = bytes => bytes < 1048576 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
   const selected = name => document.querySelector(`input[name="${name}"]:checked`).value;
+  const diagnosticKey='image-tools-last-task-v7';
+  let lastStage='',lastPercent=-1;
+  function rememberTask(stage,value) {
+    const percent=Number.isFinite(value)?Math.floor(value*10):null;
+    if(stage===lastStage && percent===lastPercent)return;
+    lastStage=stage;lastPercent=percent;
+    try{localStorage.setItem(diagnosticKey,JSON.stringify({version:7,stage,model:$('aiModel').value,time:Date.now()}));}catch(_){}
+  }
+  function finishTask(){try{localStorage.removeItem(diagnosticKey);}catch(_){}lastStage='';}
+  try{const previous=JSON.parse(localStorage.getItem(diagnosticKey)||'null');if(previous){$('previousTask').hidden=false;$('previousTask').textContent=`前回の処理が完了する前にページが閉じられた可能性があります（v${previous.version}・${previous.model==='light'?'軽量版':'従来版'}）。最後の工程：${previous.stage}。画像は再度選択してください。`;}}catch(_){}
   const status = message => { $('status').textContent = message; if(state.busy) $('taskStage').textContent=message; };
   const taskPanel=document.createElement('aside');
   taskPanel.id='taskPanel';taskPanel.hidden=true;
@@ -15,6 +25,7 @@
   const yieldUI=()=>new Promise(resolve=>setTimeout(resolve,0));
   function progress(message,value) {
     status(message);
+    if(state.busy) rememberTask(message.replace(/\d+ MB/g,'… MB'),value);
     for(const id of ['progress','taskProgress']) {
       if(Number.isFinite(value)) $(id).value=Math.max(0,Math.min(1,value));
       else $(id).removeAttribute('value');
@@ -114,6 +125,7 @@
     $('aiOptions').hidden=!ai; $('colorOptions').hidden=ai;
     state.sampling=false; $('sampleHint').hidden=true; preview.classList.remove('sampling');
   }
+  $('aiModel').addEventListener('change',()=>{stopAI();state.alphaCache=null;clearResult();});
   $('removalMethod').addEventListener('change',()=>{methodUI();clearResult();});
   $('decontaminate').addEventListener('input',e=>{$('decontaminateValue').textContent=e.target.value+'%';clearResult();});
   document.querySelectorAll('[data-bg]').forEach(button=>button.addEventListener('click',()=>{
@@ -181,7 +193,7 @@
     state.worker?.terminate();state.worker=null;
     if(state.rejectAI){state.rejectAI(new DOMException('処理を中止しました。','AbortError'));state.rejectAI=null;}
   }
-  $('cancel').addEventListener('click',()=>{state.job++;stopAI();busy(false);status('処理を中止しました。');});
+  $('cancel').addEventListener('click',()=>{state.job++;stopAI();finishTask();busy(false);status('処理を中止しました。');});
   $('taskCancel').addEventListener('click',()=>$('cancel').click());
   window.addEventListener('pagehide',()=>{if(!state.busy)stopAI();});
   async function estimateAlpha(image) {
@@ -195,7 +207,7 @@
     const tensor=ImageAlpha.rgbTensor(rgba);
     canvas.width=canvas.height=0;
     clearTimeout(idleTimer);
-    const worker=state.worker||new Worker('matting-worker.js?v=5');state.worker=worker;
+    const worker=state.worker||new Worker('matting-worker.js?v=7');state.worker=worker;
     const alpha=await new Promise((resolve,reject)=>{
       state.rejectAI=reject;
       worker.onmessage=({data})=>{
@@ -204,7 +216,7 @@
         if(data.type==='error')reject(new Error(data.text));
       };
       worker.onerror=()=>reject(new Error('AI処理を起動できませんでした。通信状態とブラウザを確認してください。'));
-      worker.postMessage({pixels:tensor.buffer},[tensor.buffer]);
+      worker.postMessage({pixels:tensor.buffer,model:$('aiModel').value},[tensor.buffer]);
     }).catch(error=>{worker.terminate();if(state.worker===worker)state.worker=null;throw error;})
       .finally(()=>{worker.onmessage=null;worker.onerror=null;if(state.worker===worker)state.rejectAI=null;});
     // Keep the small alpha cache, but release the large WASM/model memory before
@@ -279,9 +291,10 @@
       $('download').href=state.resultUrl;
       $('download').download=(state.file.name.replace(/\.[^.]+$/,'')||'image')+`_${width}x${height}.${ext}`;
       $('resultInfo').textContent=`${width.toLocaleString()} × ${height.toLocaleString()} px · ${ext.toUpperCase()} · ${formatSize(blob.size)}`;
-      $('result').hidden=false;$('compareOriginal').hidden=false;
+      $('result').hidden=false;$('compareOriginal').hidden=false;finishTask();
       status(cache?'自動透過を作成しました。白・黒の背景で、半透明部分と元背景の残りを確認できます。':'');
-    } catch(e) {if(job===state.job)status(e.message||'処理できませんでした。');}
-    finally {if(canvas)canvas.width=canvas.height=0;if(job===state.job)busy(false);}
+    } catch(e) {if(job===state.job){finishTask();status(e.message||'処理できませんでした。');}}
+    finally {if(canvas)canvas.width=canvas.height=0;if(job===state.job){busy(false);window.dispatchEvent(new Event('image-tools-cache-changed'));}}
   });
 })();
+
