@@ -1,4 +1,4 @@
-# Image Tools v4 — automatic alpha matting (experimental)
+# Image Tools v7 — automatic alpha matting (experimental)
 
 Images stay in the browser. The page downloads model/runtime assets from Hugging Face and jsDelivr; it does not upload input images or call a paid inference API. First model download is approximately 455 MB. Cache storage is best effort and can be evicted by the browser. Processing requires substantial memory; mobile devices may fail or reload the page. Cancel terminates the worker.
 
@@ -43,3 +43,9 @@ See `tests/image-tools-alpha.cjs` for tensor layout, alpha preservation and fore
 
 
 2026-09-30: Model download is streamed into Cache Storage before allocating the ONNX input buffer; it no longer retains all network chunks while allocating a second full model buffer. When storage is unavailable, a bounded single-buffer load uses Content-Length. Downloads without a known length require Cache Storage. Phones/tablets terminate the inference worker immediately after alpha estimation and retain only the small alpha cache before export. The original v10 model and alpha quality are unchanged. Runtime/session initialization still requires substantially more memory than the download size; iPhone hardware success is not established by these changes.
+
+
+
+2026-09-30 v7: Optional experimental lightweight derivative: symmetric per-tensor INT8 storage for FP32 initializers with at least 4096 elements, DequantizeLinear nodes, original FP32 input/output contract. About 115 MB instead of 455 MB. Source pinned and SHA-256 verified by scripts/build-matting-q8.py. Built with DINOv3. Copyright 2026 Imran Kocabiyik; Apache-2.0 AND LicenseRef-DINOv3. See APACHE-2.0.txt and LICENSE-DINOv3.txt. Original model metadata retained. This derivative is modified by Image Tools; quantization may change edges and alpha values. Graph optimization and arena/pattern memory are disabled for the lightweight model to avoid retaining expanded FP32 constant weights. Three same-origin chunks are individually cached and verified against SHA-256 in the manifest; no user images are uploaded. Previous interrupted stage/version/model is stored locally, without image data.
+
+Local validation: CPU synthetic cup fixture original versus lightweight mean absolute alpha error 0.000392, with localized differences up to 0.776; this is not evidence of general glass accuracy. Isolated lightweight CPU process peak RSS approximately 350 MiB. Mobile Safari hardware not tested.
