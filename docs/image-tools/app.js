@@ -12,7 +12,7 @@
     const percent=Number.isFinite(value)?Math.floor(value*10):null;
     if(stage===lastStage && percent===lastPercent)return;
     lastStage=stage;lastPercent=percent;
-    try{localStorage.setItem(diagnosticKey,JSON.stringify({version:7,stage,model:$('aiModel').value,time:Date.now()}));}catch(_){}
+    try{localStorage.setItem(diagnosticKey,JSON.stringify({version:8,stage,model:$('aiModel').value,time:Date.now()}));}catch(_){}
   }
   function finishTask(){try{localStorage.removeItem(diagnosticKey);}catch(_){}lastStage='';}
   try{const previous=JSON.parse(localStorage.getItem(diagnosticKey)||'null');if(previous){$('previousTask').hidden=false;$('previousTask').textContent=`前回の処理が完了する前にページが閉じられた可能性があります（v${previous.version}・${previous.model==='light'?'軽量版':'従来版'}）。最後の工程：${previous.stage}。画像は再度選択してください。`;}}catch(_){}
