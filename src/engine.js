@@ -1,6 +1,7 @@
 import {AudioReadSession} from './audio-stream.js';
 export {AudioReadSession} from './audio-stream.js';
-import {Input,ALL_FORMATS,BlobSource,CanvasSink,AudioBufferSink,Output,BufferTarget,Mp4OutputFormat,CanvasSource,AudioBufferSource,Quality,canEncodeVideo,canEncodeAudio} from 'mediabunny';
+import {Input,ALL_FORMATS,BlobSource,CanvasSink,AudioBufferSink,Output,StreamTarget,Mp4OutputFormat,CanvasSource,AudioBufferSource,Quality,canEncodeVideo,canEncodeAudio} from 'mediabunny';
+import {BlobOutput} from './blob-output.js';
 import {Grader} from './grade.js';
 import {ensureFonts} from './fonts.js';
 import {readVideoFrame} from './video-frame.js';
@@ -27,7 +28,7 @@ export class Renderer {
   constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d',{alpha:false});this.grader=new Grader();this.layer=document.createElement('canvas');this.iterators=new Map();}
   async prepare(p,fps,startFrame=0,endFrame=Infinity){for(const c of layout(p)){const a=assets.get(c.asset);if(!a?.video)continue;const first=Math.max(startFrame,Math.ceil((c.start-1e-8)*fps)),last=Math.min(endFrame,Math.ceil((c.end-1e-8)*fps));function* times(){for(let f=first;f<last;f++)yield Math.min(c.out-1e-6,c.in+(f/fps-c.start)*c.speed);}
     const sink=new CanvasSink(a.video,{poolSize:1});this.iterators.set(c.id,sink.canvasesAtTimestamps(times()));}}
-  async close(){for(const it of this.iterators.values())await it.return();this.iterators.clear();this.grader?.dispose();}
+  async close(){try{for(const it of this.iterators.values())await it.return();}finally{this.iterators.clear();this.grader?.dispose();for(const c of [this.layer,this.composite,this.canvas])if(c)c.width=c.height=0;}}
   async render(p,time,before=false){const {canvas}=this,w=canvas.width,h=canvas.height;
     await ensureFonts(p.texts.filter(t=>time>=t.start&&time<t.end));
     this.composite??=document.createElement('canvas');
@@ -88,7 +89,7 @@ export async function mixAudio(p,start,length,rate=48000,session=null){
   return out;
   }finally{if(ownSession)await session.close();}
 }
-export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal,start=0,length=null}){
+export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},onStage=()=>{},signal,start=0,length=null}){
   const [width,height]=dimensions(p.ratio,long),fps=p.fps;
   const allFrames=Math.max(1,Math.round(total(p)*fps)),startFrame=clamp(Math.round(start*fps),0,allFrames-1);
   const frames=length==null?allFrames-startFrame:Math.max(1,Math.min(allFrames-startFrame,Math.round(length*fps)));
@@ -102,13 +103,17 @@ export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal,
   await ensureFonts(p.texts);
   await document.fonts.ready;
   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
-  const renderer=new Renderer(canvas),target=new BufferTarget(),output=new Output({format:new Mp4OutputFormat({fastStart:'in-memory'}),target});
+  const renderer=new Renderer(canvas),store=new BlobOutput();
+  const target=new StreamTarget(new WritableStream({write:chunk=>store.write(chunk),abort:()=>store.clear()}),{chunked:true,chunkSize:1048576});
+  // A regular MP4 with metadata at the end: mux packets as they arrive instead
+  // of retaining the entire encoded movie for a final contiguous-buffer copy.
+  const output=new Output({format:new Mp4OutputFormat({fastStart:false}),target});
   const video=new CanvasSource(canvas,{codec:'avc',quality:new Quality({bitrate:mbps*1e6}),keyFrameInterval:2});
   output.addVideoTrack(video,{frameRate:fps});
   const audio=hasAudio?new AudioBufferSource({codec:'aac',quality:new Quality({bitrate:192000})}):null;
   if(audio)output.addAudioTrack(audio);
   const audioSession=new AudioReadSession();
-  let wake;
+  let wake,blob,rendererClosed=false;
   try{try{wake=await navigator.wakeLock?.request('screen');}catch{}
     await renderer.prepare(p,fps,startFrame,startFrame+frames);await output.start();
     for(let f=0;f<frames;f++){
@@ -116,8 +121,18 @@ export async function exportVideo(p,{long=1920,mbps=16,onProgress=()=>{},signal,
       if(document.hidden)throw Error('画面がバックグラウンドになったため中止しました。画面を開いたまま再実行してください');
       if(audio&&f%fps===0)await audio.add(await mixAudio(p,(startFrame+f)/fps,Math.min(1,(frames-f)/fps),48000,audioSession));
       await renderer.render(p,(startFrame+f)/fps);await video.add(f/fps,1/fps);
-      if(f%5===0){onProgress(f/frames);await new Promise(r=>setTimeout(r,0));}
+      if(f%5===0){onProgress(.98*f/frames);await new Promise(r=>setTimeout(r,0));}
     }
-    video.close();audio?.close();await output.finalize();onProgress(1);return new Blob([target.buffer],{type:'video/mp4'});
-  }catch(error){try{await output.cancel();}catch{}throw error;}finally{await audioSession.close();await renderer.close();await wake?.release();}
+    if(signal?.aborted)throw Error('書き出しを中止しました');
+    onProgress(.98);onStage('保存用のMP4を仕上げています…');
+    video.close();audio?.close();
+    await renderer.close();rendererClosed=true;await audioSession.close();
+    await output.finalize();
+    if(signal?.aborted)throw Error('書き出しを中止しました');
+    onProgress(.99);onStage('保存用のファイルを準備しています…');
+    blob=store.finish();
+  }catch(error){try{await output.cancel();}catch{}throw error;}
+  finally{store.clear();await audioSession.close();if(!rendererClosed)await renderer.close();await wake?.release();}
+  onProgress(1);return blob;
 }
+

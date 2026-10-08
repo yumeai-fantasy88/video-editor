@@ -164,6 +164,24 @@ try{
  await page.setViewportSize({width:390,height:844});
  await page.locator('[data-view="export"]').click();assert.deepEqual(await page.locator('#exportFps option').allTextContents(),['24','25','30','50','60']);
  assert.equal(await page.locator('#trialLength option').count(),3);
+ // Saving is ready before the result video is loaded; a second export releases
+ // the previous URL before allocating new output. Exercise the full UI path.
+ await page.locator('#trialLength').selectOption('3');
+ await page.locator('#resolution').selectOption('1280');
+ await page.locator('#bitrate').selectOption('8');
+ await page.locator('#exportStart').click();
+ await page.waitForFunction(()=>!document.querySelector('#download').hidden,{},{timeout:60000});
+ assert.equal(await page.locator('#exportPreview').getAttribute('src'),null);
+ assert.equal(await page.locator('#progress').evaluate(el=>el.value),1);
+ assert.equal(await page.locator('#exportPreviewOpen').isVisible(),true);
+ await page.evaluate(()=>{window.previousExportUrl=document.querySelector('#download').href;window.revokedExportUrls=[];const original=URL.revokeObjectURL.bind(URL);URL.revokeObjectURL=url=>{window.revokedExportUrls.push(url);original(url);};});
+ await page.locator('#exportStart').click();
+ assert.equal(await page.evaluate(()=>window.revokedExportUrls.includes(window.previousExportUrl)),true);
+ await page.waitForFunction(()=>!document.querySelector('#download').hidden,{},{timeout:60000});
+ await page.locator('#exportPreviewOpen').click();
+ await page.waitForFunction(()=>document.querySelector('#exportPreview').readyState>=1,{},{timeout:30000});
+ assert.ok(await page.locator('#exportPreview').evaluate(el=>el.duration>0));
  assert.deepEqual(errors,[]);
  console.log('Browser shader, neutral bypass, H.264 trial export and FPS checks passed',JSON.stringify(result));
 }finally{await browser.close();await new Promise(r=>server.close(r));await rm('.browser-test',{recursive:true,force:true});}
+
