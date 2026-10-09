@@ -36,7 +36,7 @@ export class Renderer {
     const ctx=this.composite.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
     for(const c of layout(p).filter(c=>time>=c.start-1e-8&&time<c.end-1e-8)){
       const a=assets.get(c.asset);if(!a)throw Error('素材が未接続です。素材を再選択してください');
-      let source=a.image;if(a.video){const iterator=this.iterators.get(c.id);const sourceTime=Math.min(c.out-1e-6,c.in+(time-c.start)*c.speed);const frame=(iterator?(await iterator.next()).value:null)||await readVideoFrame(a.sink,sourceTime);source=frame?.canvas;}
+      let source=a.image;if(a.video){const iterator=this.iterators.get(c.id);const sourceTime=Math.min(c.out-1e-6,c.in+(time-c.start)*c.speed);const frame=(iterator?(await iterator.next()).value:null)||(this.previewSession?await this.previewSession.read(c.id,a.sink,sourceTime):await readVideoFrame(a.sink,sourceTime));source=frame?.canvas;}
       if(!source)throw Error('映像フレームを取得できませんでした。再生位置を戻して再試行してください');
       // Transform at preview/export resolution, then apply the identical shader.
       this.layer.width=w;this.layer.height=h;const lc=this.layer.getContext('2d');lc.clearRect(0,0,w,h);lc.save();lc.translate(w*(.5+(c.offsetX??0)/100),h*(.5+(c.offsetY??0)/100));lc.rotate(c.rotation*Math.PI/180);
