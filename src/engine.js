@@ -29,7 +29,7 @@ export class Renderer {
   async prepare(p,fps,startFrame=0,endFrame=Infinity){for(const c of layout(p)){const a=assets.get(c.asset);if(!a?.video)continue;const first=Math.max(startFrame,Math.ceil((c.start-1e-8)*fps)),last=Math.min(endFrame,Math.ceil((c.end-1e-8)*fps));function* times(){for(let f=first;f<last;f++)yield Math.min(c.out-1e-6,c.in+(f/fps-c.start)*c.speed);}
     const sink=new CanvasSink(a.video,{poolSize:1});this.iterators.set(c.id,sink.canvasesAtTimestamps(times()));}}
   async close(){try{for(const it of this.iterators.values())await it.return();}finally{this.iterators.clear();this.grader?.dispose();for(const c of [this.layer,this.composite,this.canvas])if(c)c.width=c.height=0;}}
-  async render(p,time,before=false){const {canvas}=this,w=canvas.width,h=canvas.height;
+  async render(p,time,before=false,shouldPublish=()=>true){const {canvas}=this,w=canvas.width,h=canvas.height;
     await ensureFonts(p.texts.filter(t=>time>=t.start&&time<t.end));
     this.composite??=document.createElement('canvas');
     if(this.composite.width!==w||this.composite.height!==h){this.composite.width=w;this.composite.height=h;}
@@ -62,7 +62,7 @@ export class Renderer {
       lines.forEach((line,i)=>{const yy=y+(i-(lines.length-1)/2)*size*1.3;if(t.stroke)ctx.strokeText(line,x,yy);ctx.fillText(line,x,yy);});ctx.restore();
     }
     // Publish only a complete frame. Decoding must never clear the visible canvas.
-    this.ctx.drawImage(this.composite,0,0);
+    if(shouldPublish())this.ctx.drawImage(this.composite,0,0);
   }
 }
 export async function mixAudio(p,start,length,rate=48000,session=null){

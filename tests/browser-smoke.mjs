@@ -161,6 +161,12 @@ try{
  assert.equal(await page.locator('#scrub').inputValue(),'1');
  await page.locator('#fullscreenOpen').click();await page.keyboard.press('Escape');
  assert.equal(await page.locator('#fullscreenPreview').evaluate(el=>el.open),false);
+ // Delayed presentation must stop audio instead of silently changing sync.
+ await page.evaluate(()=>{window.nativeRaf=requestAnimationFrame;window.requestAnimationFrame=callback=>window.nativeRaf(timestamp=>setTimeout(()=>callback(timestamp),400));});
+ await page.locator('#play').click();
+ await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('音ズレを防ぐ'),{},{timeout:10000});
+ assert.equal(await page.locator('#play').getAttribute('aria-label'),'再生');
+ await page.evaluate(()=>{window.requestAnimationFrame=window.nativeRaf;});
  await page.setViewportSize({width:390,height:844});
  await page.locator('[data-view="export"]').click();assert.deepEqual(await page.locator('#exportFps option').allTextContents(),['24','25','30','50','60']);
  assert.equal(await page.locator('#trialLength option').count(),3);
@@ -168,7 +174,12 @@ try{
  // the previous URL before allocating new output. Exercise the full UI path.
  await page.locator('#trialLength').selectOption('3');
  await page.locator('#resolution').selectOption('1280');
+ await page.locator('#bitrate').selectOption('50');
+ const largeEstimate=await page.locator('#exportInfo').textContent();
  await page.locator('#bitrate').selectOption('8');
+ const smallEstimate=await page.locator('#exportInfo').textContent();
+ assert.ok(Number(largeEstimate.match(/約(\d+) MB/)[1])>Number(smallEstimate.match(/約(\d+) MB/)[1]));
+ assert.ok(smallEstimate.includes('90フレーム'));
  await page.locator('#exportStart').click();
  await page.waitForFunction(()=>!document.querySelector('#download').hidden,{},{timeout:60000});
  assert.equal(await page.locator('#exportPreview').getAttribute('src'),null);
