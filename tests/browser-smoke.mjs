@@ -6,7 +6,7 @@ import {readFile,mkdir,rm} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import assert from 'node:assert/strict';
 await mkdir('.browser-test',{recursive:true});
-await build({stdin:{contents:"export * from '../src/engine.js';export * from '../src/model.js';export * from '../src/grade.js';export {looks} from '../src/color-settings.js';export {Input,BufferSource,ALL_FORMATS,CanvasSink,EncodedPacketSink,Output,BufferTarget,Mp4OutputFormat,AudioBufferSource,AudioBufferSink,Quality} from 'mediabunny';export {registerAacEncoder} from '@mediabunny/aac-encoder';",resolveDir:resolve('tests')},bundle:true,format:'esm',outfile:'.browser-test/entry.js'});
+await build({stdin:{contents:"export * from '../src/engine.js';export {PreviewVideoSession} from '../src/preview-video.js';export * from '../src/model.js';export * from '../src/grade.js';export {looks} from '../src/color-settings.js';export {Input,BufferSource,ALL_FORMATS,CanvasSink,EncodedPacketSink,Output,BufferTarget,Mp4OutputFormat,AudioBufferSource,AudioBufferSink,Quality} from 'mediabunny';export {registerAacEncoder} from '@mediabunny/aac-encoder';",resolveDir:resolve('tests')},bundle:true,format:'esm',outfile:'.browser-test/entry.js'});
 const root=resolve('.');
 const server=createServer(async(req,res)=>{try{const path=resolve(root,'.'+new URL(req.url,'http://localhost').pathname);if(!path.startsWith(root+'/'))throw Error();const body=await readFile(path);res.setHeader('Content-Type',({'.js':'text/javascript','.html':'text/html','.css':'text/css'})[extname(path)]||'application/octet-stream');res.end(body);}catch{res.statusCode=404;res.end();}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -77,6 +77,12 @@ try{
    const blob=await M.exportVideo(p,{long:320,mbps:2,start:1,length:fps===24?3:.5,signal:new AbortController().signal});
    const input=new M.Input({source:new M.BufferSource(await blob.arrayBuffer()),formats:M.ALL_FORMATS}),track=await input.getPrimaryVideoTrack();
    let packets=0,first=null,last=null;for await(const packet of new M.EncodedPacketSink(track).packets()){packets++;first??=packet.timestamp;last=packet.timestamp;}
+   const preview=new M.PreviewVideoSession(),sink=new M.CanvasSink(track,{poolSize:2});
+   for(const t of [0,.04,.1,.3]){
+     const sequential=await preview.read('fixture',sink,t),direct=await new M.CanvasSink(track).getCanvas(t);
+     if(!sequential||!direct||Math.abs(sequential.timestamp-direct.timestamp)>1e-5)throw Error('Sequential preview changed source timestamps');
+   }
+   await preview.close();
    const at=await input.getPrimaryAudioTrack();
    exports.push({fps,audioCodec:at?.codec,codec:track.codec,packets,first,last,duration:await input.computeDuration()});input.dispose();
   }

@@ -19,3 +19,13 @@ test('a startup gap can hold the first picture but later missing frames never ju
  const future={async *canvases(){yield {timestamp:2,canvas:{}};}};assert.equal(await session.read('later',future,1),null);
  await session.close();
 });
+
+test('overlapping clips get independent decoder canvas pools',async()=>{
+ const source={};let opened=0;
+ const factory=()=>{const number=++opened;return {async *canvases(){yield {timestamp:0,canvas:{number}};yield {timestamp:.1,canvas:{number}};}};};
+ const session=new PreviewVideoSession();
+ assert.equal((await session.read('left',source,0,factory)).canvas.number,1);
+ assert.equal((await session.read('right',source,0,factory)).canvas.number,2);
+ assert.equal((await session.read('left',source,.05,factory)).canvas.number,1);
+ assert.equal(opened,2);await session.close();
+});
